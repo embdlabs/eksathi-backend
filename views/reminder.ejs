@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 40px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 32px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+    .content { padding: 40px 30px; line-height: 1.6; color: #333; }
+    .reminder-icon { font-size: 64px; text-align: center; margin: 20px 0; }
+    .reminder-box { background: linear-gradient(135deg, #fffbea 0%, #fff4d6 100%); border: 2px dashed #ffa500; padding: 20px; border-radius: 10px; margin: 20px 0; }
+    .action-items { background: #f0f8ff; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #4169e1; }
+    .button { display: inline-block; background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; padding: 15px 40px; text-decoration: none; border-radius: 25px; margin: 20px 0; font-weight: bold; text-shadow: 1px 1px 2px rgba(0,0,0,0.2); }
+    .footer { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; margin-top: 40px; border-radius: 0 0 10px 10px; }
+    .sparkle-text { font-size: 24px; margin-bottom: 20px; }
+    .social-links { margin: 20px 0; }
+    .social-links a { color: white; text-decoration: none; padding: 10px 20px; background: rgba(255,255,255,0.2); border-radius: 25px; margin: 5px; display: inline-block; }
+    .diwali-decoration { font-size: 32px; margin: 20px 0; }
+    .footer-text { margin: 15px 0; font-size: 14px; }
+    .footer-text a { color: #ffd700; text-decoration: none; font-weight: bold; }
+    .footer-copyright { margin: 15px 0; font-size: 12px; opacity: 0.9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⏰ <%= subject %></h1>
+    </div>
+    <div class="content">
+      <div class="reminder-icon">🔔</div>
+      <h2 style="color: #ff6b6b;">
+        <% if (role === 'student') { %>
+          Dear <%= username %>,
+        <% } else if (role === 'teacher') { %>
+          Dear Esteemed <%= username %>,
+        <% } else if (role === 'professional') { %>
+          Dear <%= username %>,
+        <% } else if (role === 'institute') { %>
+          Dear <%= username %>,
+        <% } else { %>
+          Dear <%= username %>,
+        <% } %>
+      </h2>
+      
+      <p>This is a friendly reminder to help you stay on track!</p>
+      
+      <div class="reminder-box">
+        <p><%= message %></p>
+      </div>
+
+      <div class="action-items">
+        <h3 style="color: #4169e1; margin-top: 0;">✓ Action Items:</h3>
+        <ul style="margin: 10px 0; padding-left: 20px;">
+          <li>Review all the details mentioned above</li>
+          <li>Mark the due date in your calendar</li>
+          <li>Prepare necessary documents or materials</li>
+          <li>Contact us if you need any clarification</li>
+        </ul>
+      </div>
+
+      <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107;">
+        <strong>⚠️ Important:</strong> Please don't miss this deadline. Set up your own reminders and plan accordingly to complete the task on time.
+      </p>
+
+      <center>
+        <a href="https://eksathi.com/reminders" class="button">View All Reminders →</a>
+      </center>
+
+      <p style="margin-top: 30px;">Stay organized and succeed!<br><strong>The Eksathi Team</strong></p>
+    </div>
+        <%- include('footer', { email: email }) %>
+  </div>
+</body>
+</html>

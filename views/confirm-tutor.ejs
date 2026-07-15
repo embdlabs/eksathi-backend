@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmation Request</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #28a745 0%, #20892b 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .message {
+            font-size: 16px;
+            margin-bottom: 30px;
+            color: #555;
+        }
+        
+        .sender-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 30px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .sender-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(135deg, #28a745 0%, #20892b 100%);
+        }
+        
+        .sender-card h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .sender-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            font-size: 15px;
+            color: #555;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #2c3e50;
+            min-width: 80px;
+            margin-right: 10px;
+        }
+        
+        .cta-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #28a745 0%, #20892b 100%);
+            color: white;
+            text-decoration: none;
+            padding: 15px 35px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+        
+        .footer {
+            border-top: 1px solid #dee2e6;
+            padding: 25px 30px;
+            background-color: #f8f9fa;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .signature {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #856404;
+            font-size: 14px;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 600px) {
+            .email-container {
+                margin: 10px;
+                border-radius: 8px;
+            }
+            
+            .header {
+                padding: 25px 20px;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            .sender-card {
+                padding: 20px;
+            }
+            
+            .cta-button {
+                padding: 12px 25px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>✅ Confirmation Request</h1>
+        </div>
+        
+        <div class="content">
+            <div class="greeting">
+                Hello <%= receiverName %>,
+            </div>
+            
+            <div class="message">
+                <strong><%= senderName %></strong> has requested confirmation for an important action that requires your approval.
+            </div>
+            
+            <div class="sender-card">
+                <h3>📋 Request Details</h3>
+                <div class="sender-info">
+                    <div class="info-item">
+                        <span class="info-label">From:</span>
+                        <span><%= senderName %></span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email:</span>
+                        <span><%= senderEmail %></span>
+                    </div>
+
+                    <div class="info-item">
+                        <span class="info-label">Profile:</span>
+                        <a href="<%= frontendUrl %>/app/tutor/get/<%= senderUserId %>" 
+                           style="color: #28a745; text-decoration: none; font-weight: 500;">
+                            View Profile →
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="warning-box">
+                <strong>⚠️ Action Required:</strong> Please review the request carefully before confirming. This action may have important consequences.
+            </div>
+            
+            <div class="cta-container">
+                <a href="<%= frontendUrl %>/requests/pending" class="cta-button confirm">
+                    View Request →
+                </a>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <p style="font-size: 14px; color: #6c757d; margin: 0;">
+                    Need more information about this request? 
+                    <a href="<%= frontendUrl %>/profile/<%= senderUserId %>" 
+                       style="color: #28a745; text-decoration: none; font-weight: 500;">
+                        Contact <%= senderName %>
+                    </a>
+                </p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <div class="signature">Best regards,</div>
+            <div>Your Platform Team</div>
+            <div style="margin-top: 15px; font-size: 12px;">
+                This is an automated message. Please respond using the buttons above.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

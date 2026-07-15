@@ -1,0 +1,417 @@
+{
+  "AcademicDisciplines": [
+    {
+      "Category": "Science",
+      "Subjects": {
+        "Physics": [
+          "Mechanics",
+          "Thermodynamics",
+          "Optics",
+          "Electromagnetism",
+          "Quantum Mechanics"
+        ],
+        "Chemistry": [
+          "Organic Chemistry",
+          "Inorganic Chemistry",
+          "Physical Chemistry",
+          "Biochemistry",
+          "Analytical Chemistry"
+        ],
+        "Biology": [
+          "Botany",
+          "Zoology",
+          "Genetics",
+          "Microbiology",
+          "Ecology"
+        ]
+      }
+    },
+    {
+      "Category": "Engineering",
+      "Subjects": {
+        "Mechanical": [
+          "Thermodynamics",
+          "Fluid Mechanics",
+          "Mechanics of Materials",
+          "Heat Transfer",
+          "Manufacturing Processes"
+        ],
+        "Electrical": [
+          "Circuit Analysis",
+          "Electromagnetic Fields",
+          "Control Systems",
+          "Power Systems",
+          "Digital Electronics"
+        ],
+        "Civil": [
+          "Structural Engineering",
+          "Geotechnical Engineering",
+          "Transportation Engineering",
+          "Environmental Engineering",
+          "Construction Management"
+        ],
+        "Computer Science": [
+          "Data Structures",
+          "Algorithms",
+          "Operating Systems",
+          "Computer Networks",
+          "Database Management Systems",
+          "Web Development"
+        ]
+      }
+    },
+    {
+      "Category": "Technology",
+      "Subjects": {
+        "Information Technology": [
+          "Networking",
+          "Cybersecurity",
+          "Cloud Computing",
+          "Database Administration",
+          "Systems Analysis"
+        ],
+        "AI & Data Science": [
+          "Machine Learning",
+          "Data Analysis",
+          "Big Data",
+          "Natural Language Processing",
+          "Neural Networks"
+        ]
+      }
+    },
+    {
+      "Category": "Management",
+      "Subjects": {
+        "Business Administration (MBA)": [
+          "Leadership",
+          "Financial Analysis",
+          "Marketing"
+        ],
+        "Finance": [
+          "Investment Analysis",
+          "Risk Management",
+          "Financial Modeling"
+        ],
+        "Marketing": [
+          "Market Research",
+          "Branding",
+          "Digital Marketing"
+        ]
+      }
+    },
+    {
+      "Category": "Arts & Humanities",
+      "Subjects": {
+        "Literature": [
+          "Critical Thinking",
+          "Writing",
+          "Communication"
+        ],
+        "History": [
+          "Research",
+          "Historical Analysis",
+          "Cultural Studies"
+        ],
+        "Sociology": [
+          "Social Research",
+          "Data Analysis",
+          "Communication"
+        ]
+      }
+    },
+    {
+      "Category": "Social Sciences",
+      "Subjects": {
+        "Economics": [
+          "Data Analysis",
+          "Econometrics",
+          "Policy Analysis"
+        ],
+        "Political Science": [
+          "Policy Analysis",
+          "Public Administration",
+          "Research"
+        ]
+      }
+    },
+    {
+      "Category": "Law",
+      "Subjects": {
+        "Law (LLB/LLM)" : [
+          "Legal Research",
+          "Litigation",
+          "Contract Analysis"
+        ]
+      }
+    },
+    {
+      "Category": "Commerce",
+      "Subjects": {
+        "Accounting & Finance": [
+          "Auditing",
+          "Taxation",
+          "Financial Reporting"
+        ],
+        "Banking": [
+          "Risk Management",
+          "Compliance",
+          "Financial Analysis"
+        ]
+      }
+    },
+    {
+      "Category": "Healthcare",
+      "Subjects": {
+        "Medicine": [
+          "Clinical Skills",
+          "Diagnostics",
+          "Patient Care",
+          "Medical Research"
+        ],
+        "Nursing": [
+          "Patient Care",
+          "Emergency Response",
+          "Communication",
+          "Healthcare Management"
+        ],
+        "Pharmacy": [
+          "Drug Formulation",
+          "Pharmaceutical Analysis",
+          "Regulatory Compliance"
+        ]
+      }
+    },
+    {
+      "Category": "Environmental Science",
+      "Subjects": [
+        "Environmental Impact Assessment",
+        "Sustainability",
+        "Ecological Research",
+        "Conservation Strategies"
+      ]
+    },
+    {
+      "Category": "Architecture",
+      "Subjects": [
+        "Design",
+        "Urban Planning",
+        "3D Modeling (AutoCAD)",
+        "Sustainable Building Techniques"
+      ]
+    },
+    {
+      "Category": "Agriculture",
+      "Subjects": [
+        "Agronomy",
+        "Soil Science",
+        "Crop Management",
+        "Agri-Tech",
+        "Food Safety"
+      ]
+    },
+    {
+      "Category": "Journalism & Mass Communication",
+      "Subjects": [
+        "News Writing",
+        "Reporting",
+        "Media Production",
+        "Public Relations",
+        "Digital Content Creation"
+      ]
+    },
+    {
+      "Category": "Education",
+      "Subjects": [
+        "Curriculum Development",
+        "Teaching Methods",
+        "Educational Psychology",
+        "Assessment Techniques"
+      ]
+    },
+    {
+      "Category": "Psychology",
+      "Subjects": [
+        "Counseling",
+        "Psychological Assessment",
+        "Research",
+        "Behavioral Analysis"
+      ]
+    },
+    {
+      "Category": "Fashion Design",
+      "Subjects": [
+        "Design Skills",
+        "Pattern Making",
+        "Textile Knowledge",
+        "Trend Analysis",
+        "Merchandising"
+      ]
+    },
+    {
+      "Category": "Hospitality Management",
+      "Subjects": [
+        "Event Planning",
+        "Customer Service",
+        "Hotel Operations",
+        "Food and Beverage Management"
+      ]
+    },
+    {
+      "Category": "Tourism",
+      "Subjects": [
+        "Destination Management",
+        "Travel Planning",
+        "Customer Service",
+        "Tourism Marketing"
+      ]
+    },
+    {
+      "Category": "Fine Arts",
+      "Subjects": [
+        "Creative Thinking",
+        "Visual Design",
+        "Art History",
+        "Studio Skills (Painting, Sculpture)"
+      ]
+    },
+    {
+      "Category": "Performing Arts",
+      "Subjects": [
+        "Performance Techniques",
+        "Creativity",
+        "Stage Management",
+        "Cultural Interpretation"
+      ]
+    }
+  ],
+  "SchoolSubjects": {
+    "1": {
+      "Category": "Science",
+      "Subjects": [
+        "Physics",
+        "Chemistry",
+        "Biology"
+      ]
+    },
+    "2": {
+      "Category": "Competition Level",
+      "Subjects": [
+        "Logical Reasoning",
+        "Problem-Solving",
+        "Quantitative Analysis",
+        "Computational Skills"
+      ]
+    },
+    "3": {
+      "Category": "Social Science",
+      "Subjects": {
+        "History": [
+          "Research",
+          "Critical Thinking",
+          "Historical Analysis",
+          "Understanding Cultural Heritage"
+        ],
+        "Geography": [
+          "Spatial Thinking",
+          "Environmental Awareness",
+          "Map Skills",
+          "Global Perspective"
+        ],
+        "Political Science": [
+          "Analytical Thinking",
+          "Governance Understanding",
+          "Policy Analysis"
+        ]
+      }
+    },
+    "4": {
+      "Category": "Languages",
+      "Subjects": [
+        "English",
+        "Hindi",
+        "Regional Languages"
+      ],
+      "KeySkills": [
+        "Communication",
+        "Reading Comprehension",
+        "Creative Writing",
+        "Grammar Skills",
+        "Literary Analysis"
+      ]
+    },
+    "5": {
+      "Category": "Computer Science",
+      "Subjects": [
+        "Basic Programming",
+        "Logical Thinking",
+        "Digital Literacy",
+        "Problem-Solving"
+      ]
+    },
+    "6": {
+      "Category": "Economics (Higher Secondary)",
+      "Subjects": [
+        "Data Interpretation",
+        "Understanding Markets",
+        "Policy Analysis",
+        "Quantitative Analysis"
+      ]
+    },
+    "7": {
+      "Category": "Environmental Studies",
+      "Subjects": [
+        "Ecological Awareness",
+        "Conservation Practices",
+        "Environmental Problem-Solving",
+        "Sustainability"
+      ]
+    },
+    "8": {
+      "Category": "Physical Education",
+      "Subjects": [
+        "Teamwork",
+        "Physical Fitness",
+        "Leadership",
+        "Discipline",
+        "Motor Skills Development"
+      ]
+    },
+    "9": {
+      "Category": "Art Education",
+      "Subjects": [
+        "Creativity",
+        "Visual Expression",
+        "Design Skills",
+        "Cultural Appreciation"
+      ]
+    },
+    "10": {
+      "Category": "Moral Science/Value Education",
+      "Subjects": [
+        "Ethical Reasoning",
+        "Empathy",
+        "Decision-Making",
+        "Social Awareness"
+      ]
+    },
+    "11": {
+      "Category": "Home Science (Higher Secondary)",
+      "Subjects": [
+        "Cooking",
+        "Household Management",
+        "Budgeting",
+        "Nutrition Knowledge"
+      ]
+    },
+    "12": {
+      "Category": "Music",
+      "Subjects": [
+        "Rhythm",
+        "Creativity",
+        "Musical Expression",
+        "Auditory Skills",
+        "Cultural Appreciation"
+      ]
+    }
+  }
+}

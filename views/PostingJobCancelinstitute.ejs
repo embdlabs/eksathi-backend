@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 20px auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 32px; }
+    .content { padding: 40px 30px; line-height: 1.6; color: #333; }
+    .celebration-icon { font-size: 64px; text-align: center; margin: 20px 0; }
+    .info-box { background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); padding: 25px; border-radius: 10px; margin: 25px 0; border-left: 4px solid #4caf50; }
+    .info-box h3 { margin-top: 0; color: #2e7d32; }
+    .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 15px 40px; text-decoration: none; border-radius: 25px; margin: 20px 0; font-weight: bold; box-shadow: 0 4px 6px rgba(0,0,0,0.2); transition: transform 0.2s; }
+    .button:hover { transform: translateY(-2px); }
+    .highlight-box { background: #fff3e0; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #ff9800; }
+    .steps-container { background: #f5f5f5; padding: 25px; border-radius: 10px; margin: 20px 0; }
+    .step-item { margin: 15px 0; padding-left: 30px; position: relative; }
+    .step-item:before { content: "✓"; position: absolute; left: 0; color: #4caf50; font-weight: bold; font-size: 20px; }
+    .footer { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 20px; text-align: center; margin-top: 40px; border-radius: 0 0 10px 10px; }
+    .footer-text { margin: 15px 0; font-size: 14px; }
+    .footer-text a { color: #ffd700; text-decoration: none; font-weight: bold; }
+    .footer-copyright { margin: 15px 0; font-size: 12px; opacity: 0.9; }
+    .social-links { margin: 20px 0; }
+    .social-links a { color: white; text-decoration: none; padding: 10px 20px; background: rgba(255,255,255,0.2); border-radius: 25px; margin: 5px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎉 Institute Created Successfully!</h1>
+    </div>
+    <div class="content">
+      <div class="celebration-icon">🏢</div>
+      <h2 style="color: #667eea;">Dear <%= instituteName %>,</h2>
+      
+      <p>Congratulations! Your institute profile has been successfully created on <strong>Eksathi</strong>.</p>
+      
+      <div class="info-box">
+        <h3>🎯 Next Step: Post Your Job Opening</h3>
+        <p style="margin: 10px 0 0 0;">You're now ready to connect with talented candidates. Start by posting your first job opening and reach qualified professionals in your field.</p>
+      </div>
+
+      <div class="highlight-box">
+        <p style="margin: 0;"><strong>📢 Why post a job on Eksathi?</strong></p>
+        <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+          <li>Access to a pool of verified professionals</li>
+          <li>Easy-to-use job posting interface</li>
+          <li>Real-time application tracking</li>
+          <li>Connect with the right talent quickly</li>
+        </ul>
+      </div>
+
+      <div class="steps-container">
+        <h3 style="color: #667eea; margin-top: 0;">📝 How to Post a Job:</h3>
+        <div class="step-item">Click the button below to access the job posting form</div>
+        <div class="step-item">Fill in the job details and requirements</div>
+        <div class="step-item">Review and publish your job posting</div>
+        <div class="step-item">Start receiving applications from interested candidates</div>
+      </div>
+
+      <center>
+        <a href="<%= jobPostingLink %>" class="button">Post Your First Job →</a>
+      </center>
+
+      <p style="margin-top: 30px; color: #666; font-size: 14px;">
+        <strong>Need help?</strong> Our support team is here to assist you. Visit our <a href="https://eksathi.com/help" style="color: #667eea; text-decoration: none;">Help Center</a> or contact us directly.
+      </p>
+
+      <p style="margin-top: 30px;">Welcome aboard!<br><strong>The Eksathi Team</strong></p>
+    </div>
+    
+   <%- include('footer', { email: email }) %>
+
+  </div>
+</body>
+</html>

@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Happy Diwali - Eksathi</title>
+    <style>
+      /* Reset */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background-color: #f4f4f4;
+        line-height: 1.6;
+        padding: 0;
+        margin: 0;
+      }
+
+      /* Main Container */
+      .email-container {
+        max-width: 600px;
+        margin: 0 auto;
+        background-color: #ffffff;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Banner Section - COMPACT */
+      .banner {
+        background: linear-gradient(
+          135deg,
+          #1a1a2e 0%,
+          #16213e 50%,
+          #0f3460 100%
+        );
+        padding: 15px 20px 20px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .banner::before {
+        content: "";
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(
+          circle,
+          rgba(255, 165, 0, 0.1) 0%,
+          transparent 70%
+        );
+      }
+
+      .banner-content {
+        position: relative;
+        z-index: 1;
+      }
+
+      .logo {
+        max-width: 70px;
+        height: auto;
+        margin-bottom: 8px;
+      }
+
+      .main-heading {
+        color: #ffffff;
+        font-size: 24px;
+        font-weight: 700;
+        margin: 0 0 5px 0;
+        text-shadow: 0 4px 20px rgba(255, 215, 0, 0.6);
+        letter-spacing: 1px;
+      }
+
+      .subtitle {
+        color: #e0e0e0;
+        font-size: 13px;
+        font-weight: 300;
+        line-height: 1.4;
+        margin: 0 0 8px 0;
+        text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+      }
+
+      .diya-emoji {
+        font-size: 24px;
+        margin-top: 5px;
+        display: inline-block;
+      }
+
+      /* Greeting Section - COMPACT */
+      .greeting {
+        background-color: #ffffff;
+        padding: 15px 20px;
+        text-align: center;
+      }
+
+      .greeting p {
+        color: #333333;
+        font-size: 16px;
+        line-height: 1.5;
+        margin: 0 0 5px 0;
+      }
+
+      .greeting strong {
+        color: #ffa500;
+        display: inline-block;
+      }
+
+      .greeting-sub {
+        color: #666666;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0;
+      }
+
+      /* Message Section - COMPACT */
+      .message-section {
+        background-color: #fff8e1;
+        padding: 20px;
+        border-left: 4px solid #ffa500;
+        margin: 0;
+      }
+
+      .message-title {
+        color: #ffa500;
+        font-size: 16px;
+        margin: 0 0 10px 0;
+        font-weight: 600;
+      }
+
+      .message-content {
+        color: #555555;
+        font-size: 14px;
+        line-height: 1.7;
+        margin: 0;
+        white-space: pre-line;
+      }
+
+      /* Role Section - COMPACT */
+      .role-section {
+        background: linear-gradient(135deg, #f9f9f9 0%, #ffffff 100%);
+        padding: 20px;
+      }
+
+      .role-icon {
+        font-size: 36px;
+        margin-bottom: 5px;
+        display: inline-block;
+      }
+
+      .role-title {
+        color: #ffa500;
+        font-size: 18px;
+        margin: 5px 0 8px 0;
+        font-weight: 600;
+      }
+
+      .role-message {
+        color: #555555;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0 0 10px 0;
+      }
+
+      .role-features {
+        list-style: none;
+        margin: 10px 0 0 0;
+        padding: 0;
+      }
+
+      .role-features li {
+        color: #555555;
+        font-size: 14px;
+        margin-bottom: 5px;
+        padding-left: 5px;
+      }
+
+      /* CTA Button - COMPACT */
+      .cta-section {
+        background-color: #ffffff;
+        padding: 20px;
+        text-align: center;
+      }
+
+      .cta-button {
+        display: inline-block;
+        background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+        color: #ffffff;
+        text-decoration: none;
+        padding: 12px 35px;
+        border-radius: 30px;
+        font-size: 15px;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(255, 165, 0, 0.4);
+        transition: all 0.3s ease;
+      }
+
+      .cta-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(255, 165, 0, 0.6);
+        background: linear-gradient(135deg, #ff8c00 0%, #ffa500 100%);
+      }
+
+      /* Footer - COMPACT */
+      .footer {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        padding: 20px;
+        text-align: center;
+      }
+
+      .footer h3 {
+        color: #ffa500;
+        font-size: 18px;
+        margin: 0 0 12px 0;
+        font-weight: 600;
+      }
+
+      .social-links {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        margin: 12px 0;
+        flex-wrap: wrap;
+      }
+
+      .social-links a {
+        display: inline-block;
+        background: rgba(255, 165, 0, 0.1);
+        color: #ffa500;
+        text-decoration: none;
+        padding: 8px 18px;
+        border-radius: 25px;
+        font-size: 13px;
+        font-weight: 500;
+        border: 2px solid rgba(255, 165, 0, 0.3);
+        transition: all 0.3s ease;
+      }
+
+      .social-links a:hover {
+        background: rgba(255, 165, 0, 0.3);
+        transform: translateY(-3px) scale(1.05);
+        box-shadow: 0 5px 15px rgba(255, 165, 0, 0.4);
+        border-color: #ffa500;
+      }
+
+      .footer-text {
+        margin: 12px 0 8px 0;
+        color: #ccc;
+        font-size: 13px;
+      }
+
+      .footer-text a {
+        color: #ffa500;
+        text-decoration: none;
+        transition: color 0.3s ease;
+      }
+
+      .footer-text a:hover {
+        color: #ff8c00;
+        text-decoration: underline;
+      }
+
+      .footer-copyright {
+        font-size: 11px;
+        color: #999;
+        line-height: 1.5;
+      }
+
+      .diwali-decoration {
+        font-size: 20px;
+        margin: 10px 0;
+        display: block;
+      }
+
+      /* Sparkle Effect */
+      .sparkle-text {
+        background: linear-gradient(90deg, #ffa500, #ffd700, #ffa500);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      /* Responsive */
+      @media only screen and (max-width: 600px) {
+        .banner {
+          padding: 12px 15px 15px;
+        }
+
+        .main-heading {
+          font-size: 20px;
+        }
+
+        .logo {
+          max-width: 60px;
+          margin-bottom: 6px;
+        }
+
+        .diya-emoji {
+          font-size: 20px;
+        }
+
+        .greeting,
+        .role-section,
+        .cta-section,
+        .footer {
+          padding: 15px;
+        }
+
+        .social-links {
+          gap: 10px;
+        }
+
+        .social-links a {
+          padding: 7px 15px;
+          font-size: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="email-container">
+      <!-- Banner Section -->
+      <div class="banner">
+        <div class="banner-content">
+          <img
+            src="https://www.eksathi.com/logo512.png"
+            alt="Eksathi Logo"
+            class="logo"
+          />
+
+          <h1 class="main-heading">✨ Happy Diwali ✨</h1>
+          <p class="subtitle">
+            May the festival of lights fill your life with brightness and joy
+          </p>
+          <div class="diya-emoji">🪔</div>
+        </div>
+      </div>
+
+      <!-- Greeting Section -->
+      <div class="greeting">
+        <p>Dear <strong><%= username || 'Valued Member' %></strong>,</p>
+        <p class="greeting-sub">
+          Warm Diwali greetings from the entire Eksathi family!
+        </p>
+      </div>
+
+      <!-- Dynamic Message Section (Optional) -->
+      <% if (message && message.trim()) { %>
+      <div class="message-section">
+        <h3 class="message-title">📧 Special Message</h3>
+        <p class="message-content"><%= message %></p>
+      </div>
+      <% } %>
+
+      <!-- Role-Specific Section -->
+      <div class="role-section">
+        <div style="text-align: center">
+          <% if (role === 'student') { %>
+          <div class="role-icon">🎓</div>
+          <h3 class="role-title">For Our Bright Students</h3>
+          <p class="role-message">
+            May this Diwali illuminate your path to knowledge and success! Your
+            dedication to learning inspires us every day.
+          </p>
+          <ul class="role-features">
+            <li>🪔 Shine bright in your academic journey</li>
+            <li>🪔 Discover new opportunities this festive season</li>
+            <li>🪔 May your hard work light up with success</li>
+            <li>🪔 Celebrate learning and growth</li>
+          </ul>
+
+          <% } else if (role === 'teacher') { %>
+          <div class="role-icon">👨‍🏫</div>
+          <h3 class="role-title">For Our Inspiring Teachers</h3>
+          <p class="role-message">
+            Thank you for being the guiding light in countless lives! Your
+            wisdom and dedication shape the future every single day.
+          </p>
+          <ul class="role-features">
+            <li>🪔 Your wisdom brightens futures</li>
+            <li>🪔 Inspiring minds, one lesson at a time</li>
+            <li>🪔 May your dedication be rewarded abundantly</li>
+            <li>🪔 Celebrating your invaluable contribution</li>
+          </ul>
+
+          <% } else if (role === 'professional') { %>
+          <div class="role-icon">💼</div>
+          <h3 class="role-title">For Our Dedicated Professionals</h3>
+          <p class="role-message">
+            May your career soar to new heights this Diwali! Your expertise and
+            commitment drive excellence in everything you do.
+          </p>
+          <ul class="role-features">
+            <li>🪔 Achieve new milestones in your career</li>
+            <li>🪔 May prosperity follow your endeavors</li>
+            <li>🪔 Success in every project you undertake</li>
+            <li>🪔 Growth, wellness, and work-life balance</li>
+          </ul>
+
+          <% } else if (role === 'institute') { %>
+          <div class="role-icon">🏛️</div>
+          <h3 class="role-title">For Our Partner Institutes</h3>
+          <p class="role-message">
+            Building futures, one student at a time. Happy Diwali! Together, we
+            continue to create a brighter tomorrow through education.
+          </p>
+          <ul class="role-features">
+            <li>🪔 Excellence in education and innovation</li>
+            <li>🪔 Growing stronger as a learning community</li>
+            <li>🪔 May your impact continue to expand</li>
+            <li>🪔 Celebrating collective achievements</li>
+          </ul>
+
+          <% } else { %>
+          <div class="role-icon">✨</div>
+          <h3 class="role-title">Warm Diwali Wishes</h3>
+          <p class="role-message">
+            May this festival of lights bring happiness, prosperity, and success
+            to you and your loved ones. Wishing you a wonderful Diwali filled
+            with joy and celebration!
+          </p>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- Footer -->
+       <%- include('footer', { email: email }) %>
+      <!-- <div class="footer">
+        <h3 class="sparkle-text">Stay Connected</h3>
+
+        <div class="social-links">
+          <a href="https://www.facebook.com/ek.sathi.71/">📘 Facebook</a>
+          <a href="https://www.linkedin.com/in/eksathi/">💼 LinkedIn</a>
+          <a href="https://www.instagram.com/eksathi21/">📷 Instagram</a>
+        </div>
+
+        <div class="diwali-decoration">🎆 🪔 🎇</div>
+
+        <p class="footer-text">
+          Need help? Contact us at
+          <a href="mailto:support@eksathi.com">support@eksathi.com</a>
+        </p>
+
+        <p class="footer-copyright">
+          © <%= new Date().getFullYear() %> Eksathi. All rights reserved.<br />
+          This email was sent to <span class="sparkle-text"><%= email %></span>
+        </p>
+      </div> -->
+    </div>
+  </body>
+</html>

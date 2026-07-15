@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Connection Request</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f8f9fa;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .greeting {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        
+        .message {
+            font-size: 16px;
+            margin-bottom: 30px;
+            color: #555;
+        }
+        
+        .sender-card {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            padding: 25px;
+            margin: 30px 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .sender-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+        }
+        
+        .sender-card h3 {
+            margin: 0 0 15px 0;
+            color: #2c3e50;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .sender-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            font-size: 15px;
+            color: #555;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #2c3e50;
+            min-width: 60px;
+            margin-right: 10px;
+        }
+        
+        .cta-container {
+            text-align: center;
+            margin: 40px 0;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+            text-decoration: none;
+            padding: 15px 35px;
+            border-radius: 25px;
+            font-weight: 600;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+        }
+        
+        .footer {
+            border-top: 1px solid #dee2e6;
+            padding: 25px 30px;
+            background-color: #f8f9fa;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .signature {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 600px) {
+            .email-container {
+                margin: 10px;
+                border-radius: 8px;
+            }
+            
+            .header {
+                padding: 25px 20px;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            .sender-card {
+                padding: 20px;
+            }
+            
+            .cta-button {
+                padding: 12px 25px;
+                font-size: 14px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="header">
+            <h1>🤝 New Connection Request</h1>
+        </div>
+        
+        <div class="content">
+            <div class="greeting">
+                Hello <%= receiverName %>,
+            </div>
+            
+            <div class="message">
+                <strong><%= senderName %></strong> has sent you a connection request and would like to connect with you on our platform.
+            </div>
+            
+            <div class="sender-card">
+                <h3>👤 Sender Details</h3>
+                <div class="sender-info">
+                    <div class="info-item">
+                        <span class="info-label">Name:</span>
+                        <span><%= senderName %></span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email:</span>
+                        <span><%= senderEmail %></span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Profile:</span>
+                        <a href="<%= frontendUrl %>/app/tutor/get/<%= senderUserId %>" 
+                           style="color: #007bff; text-decoration: none; font-weight: 500;">
+                            View Profile →
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="cta-container">
+                <a href="<%= frontendUrl %>/connections/pending" class="cta-button">
+                    View Connection Requests →
+                </a>
+            </div>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <p style="font-size: 14px; color: #6c757d; margin: 0;">
+                    Want to learn more about <%= senderName %>? 
+                    <a href="<%= frontendUrl %>/profile/<%= senderUserId %>" 
+                       style="color: #007bff; text-decoration: none; font-weight: 500;">
+                        Visit their profile
+                    </a>
+                </p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <div class="signature">Best regards,</div>
+            <div>Your Platform Team</div>
+            <div style="margin-top: 15px; font-size: 12px;">
+                This is an automated message. Please do not reply to this email.
+            </div>
+        </div>
+    </div>
+</body>
+</html>

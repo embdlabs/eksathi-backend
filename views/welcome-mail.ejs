@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome to Eksathi</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+        background: #f5f7fa;
+        line-height: 1.6;
+      }
+
+      .container {
+        max-width: 600px;
+        margin: 20px auto;
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+      }
+
+      .header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        text-align: center;
+        padding: 40px 20px;
+      }
+
+      .logo {
+        width: 80px;
+        height: 80px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 20px;
+        margin: 0 auto 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        font-weight: bold;
+        letter-spacing: -1px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        backdrop-filter: blur(10px);
+      }
+
+      .content {
+        padding: 30px;
+      }
+
+      .greeting {
+        text-align: center;
+        margin-bottom: 30px;
+      }
+
+      .role-box {
+        background: #f8f9ff;
+        border-radius: 12px;
+        padding: 25px;
+        margin: 20px 0;
+        border-left: 4px solid #667eea;
+      }
+
+      .account-info {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin: 20px 0;
+      }
+
+      .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .info-row:last-child {
+        border-bottom: none;
+      }
+
+      .cta-button {
+        display: inline-block;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        text-decoration: none;
+        padding: 15px 30px;
+        border-radius: 25px;
+        font-weight: 600;
+        text-align: center;
+        margin: 20px 0;
+      }
+
+      .features {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 20px;
+        margin: 30px 0;
+      }
+
+      .feature {
+        text-align: center;
+        padding: 20px;
+        background: #f8f9ff;
+        border-radius: 12px;
+      }
+
+      .feature-icon {
+        font-size: 40px;
+        margin-bottom: 10px;
+      }
+
+      .footer {
+        background: #2c3e50;
+        color: white;
+        text-align: center;
+        padding: 30px 20px;
+      }
+
+      .social-links {
+        margin: 20px 0;
+      }
+
+      .social-links a {
+        display: inline-block;
+        margin: 0 10px;
+        color: white;
+        text-decoration: none;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+      }
+
+      /* Mobile Responsive */
+      @media (max-width: 600px) {
+        .container {
+          margin: 10px;
+          border-radius: 8px;
+        }
+
+        .header {
+          padding: 30px 15px;
+        }
+
+        .content {
+          padding: 20px 15px;
+        }
+
+        .info-row {
+          flex-direction: column;
+          gap: 5px;
+        }
+
+        .features {
+          grid-template-columns: 1fr;
+        }
+
+        .cta-button {
+          display: block;
+          width: 100%;
+        }
+
+        h1 {
+          font-size: 24px;
+        }
+
+        h2 {
+          font-size: 20px;
+        }
+
+        .footer {
+          padding: 20px 15px;
+        }
+
+        .logo {
+          width: 70px;
+          height: 70px;
+          font-size: 24px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        <div class="logo">
+          <img
+            src="https://www.eksathi.com/logo192.png"
+            alt="Eksathi Logo"
+            style="max-width: 100%; height: auto"
+          />
+        </div>
+        <h1>Welcome to Eksathi!</h1>
+        <p>Your Learning Journey Begins</p>
+      </div>
+
+      <!-- Main Content -->
+      <div class="content">
+        <!-- Greeting -->
+        <div class="greeting">
+          <% if (role === 'institute') { %>
+          <h2>Hello <%= firstName %>! 👋</h2>
+          <p>
+            🎉 Your institute account has been successfully created! Welcome to
+            our learning community.
+          </p>
+          <% } else { %>
+          <h2>Hello <%= firstName %> <%= lastname %>! 👋</h2>
+          <p>
+            🎉 Your account has been successfully created! Welcome to our
+            learning community.
+          </p>
+          <% } %>
+        </div>
+
+        <!-- Role-based Content -->
+        <div class="role-box">
+          <% if (role === 'teacher') { %>
+          <h3>👨‍🏫 Welcome, Educator!</h3>
+          <p>
+            Join our community of passionate teachers. Share your knowledge and
+            inspire students worldwide!
+          </p>
+          <% } else if (role === 'student') { %>
+          <h3>🎓 Welcome, Student!</h3>
+          <p>
+            Get ready for an amazing learning journey! Connect with expert
+            teachers and expand your knowledge.
+          </p>
+          <% } else if (role === 'institute') { %>
+          <h3>🏫 Institute Account Created Successfully!</h3>
+          <p>
+            Your institute profile has been created on Eksathi. You can now
+            manage your institution, post job openings, and connect with
+            talented educators. Use the credentials below to log in and complete
+            your profile.
+          </p>
+          <% } else { %>
+          <h3>🌟 Welcome, Member!</h3>
+          <p>
+            You're now part of our learning community. Explore, learn, and grow
+            with us!
+          </p>
+          <% } %>
+        </div>
+
+       <!-- Account Info -->
+        <div class="account-info">
+          <% if (role === 'admin' || role === 'superadmin') { %>
+          <h3>🔐 Your Login Credentials</h3>
+          <div class="info-row">
+            <span>Email:</span>
+            <span><%= email %></span>
+          </div>
+          <div class="info-row">
+            <span>Username:</span>
+            <span><%= username %></span>
+          </div>
+          <div class="info-row">
+            <span>Password:</span>
+            <span><%= password %></span>
+          </div>
+          <p style="margin-top: 15px; font-size: 14px; opacity: 0.9">
+            ⚠️ Please keep these credentials secure. You can change your
+            password after logging in.
+          </p>
+          <% } else { %>
+          <h3>📋 Your Account Details</h3>
+          <div class="info-row">
+            <span>Email:</span>
+            <span><%= email %></span>
+          </div>
+          <div class="info-row">
+            <span>Username:</span>
+            <span><%= username %></span>
+          </div>
+          <div class="info-row">
+            <span>Role:</span>
+            <span style="text-transform: capitalize"><%= role %></span>
+          </div>
+          <% } %>
+        </div>
+
+        <!-- CTA Button -->
+        <div style="text-align: center">
+          <a href="<%= profilelink %>" class="cta-button">
+            <% if (role === 'institute') { %> 🔗 Complete Your Institute Profile
+            <% } else { %> 🚀 Visit Your Profile <% } %>
+          </a>
+          <p style="color: #666; font-size: 14px">
+            <% if (role === 'institute') { %> Click the link above to add more
+            details about your institute <% } else { %> Complete your profile to
+            get started! <% } %>
+          </p>
+        </div>
+
+        <!-- Features -->
+        <div class="features">
+          <% if (role === 'institute') { %>
+          <div class="feature">
+            <div class="feature-icon">🏫</div>
+            <h4>Manage Institution</h4>
+            <p>Comprehensive institute management tools</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">👥</div>
+            <h4>Post Job Openings</h4>
+            <p>Find and hire qualified educators</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">📊</div>
+            <h4>Analytics & Reports</h4>
+            <p>Track performance and growth</p>
+          </div>
+          <% } else { %>
+          <div class="feature">
+            <div class="feature-icon">📚</div>
+            <h4>Quality Learning</h4>
+            <p>Access premium educational content</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">🤝</div>
+            <h4>Global Community</h4>
+            <p>Connect with learners worldwide</p>
+          </div>
+          <div class="feature">
+            <div class="feature-icon">🎯</div>
+            <h4>Achieve Goals</h4>
+            <p>Track progress and reach milestones</p>
+          </div>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <h3>Stay Connected</h3>
+        <div class="social-links">
+          <a href="https://www.facebook.com/ek.sathi.71/">Facebook</a>
+          <a href="https://www.linkedin.com/in/eksathi/">LinkedIn</a>
+          <a href="https://www.instagram.com/eksathi21/">Instagram</a>
+        </div>
+
+        <p style="margin: 20px 0; color: #ccc">
+          Need help? Contact us at
+          <a href="mailto:support@eksathi.com" style="color: #667eea"
+            >support@eksathi.com</a
+          >
+        </p>
+
+        <p style="font-size: 12px; opacity: 0.8">
+          © <%= new Date().getFullYear() %> Eksathi. All rights reserved.<br />
+          This email was sent to <%= email %>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>

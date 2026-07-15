@@ -1,0 +1,318 @@
+{
+  "SchoolSubjects": {
+    "Nursery": {
+      "Category": "Primary",
+      "Subjects": ["Rhymes", "English", "Math", "Drawing"]
+    },
+    "LKG": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "Drawing"]
+    },
+    "UKG": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "Drawing"]
+    },
+    "1": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "EVS", "Drawing"]
+    },
+    "2": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "EVS", "Drawing"]
+    },
+    "3": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "EVS", "Drawing"]
+    },
+    "4": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "EVS", "Drawing"]
+    },
+    "5": {
+      "Category": "Primary",
+      "Subjects": ["Hindi", "English", "Math", "EVS", "Drawing"]
+    },
+    "6": {
+      "Category": "Middle",
+      "Subjects": ["Hindi", "English", "Math", "Science", "Social", "Drawing", "Computer"]
+    },
+    "7": {
+      "Category": "Middle",
+      "Subjects": ["Hindi", "English", "Math", "Science", "Social", "Drawing", "Computer"]
+    },
+    "8": {
+      "Category": "Middle",
+      "Subjects": ["Hindi", "English", "Math", "Science", "Social", "Drawing", "Computer"]
+    },
+    "9": {
+      "Category": "Middle",
+      "Subjects": ["Hindi", "English", "Math", "Science", "Social", "Drawing", "Computer"]
+    },
+    "10": {
+      "Category": "Secondary",
+      "Subjects": ["Hindi", "English", "Math", "Science", "Social", "Computer"]
+    },
+    "11-Science": {
+      "Category": "Science",
+      "Subjects": ["Physics", "Chemistry", "Math", "Biology", "English", "Computer"]
+    },
+    "11-Commerce": {
+      "Category": "Commerce",
+      "Subjects": ["Accountancy", "Business Studies", "Economics", "English", "Math"]
+    },
+    "11-Arts": {
+      "Category": "Arts",
+      "Subjects": ["History", "Political Science", "Geography", "Sociology", "English"]
+    },
+    "12-Science": {
+      "Category": "Science",
+      "Subjects": ["Physics", "Chemistry", "Math", "Biology", "English", "Computer"]
+    },
+    "12-Commerce": {
+      "Category": "Commerce",
+      "Subjects": ["Accountancy", "Business Studies", "Economics", "English", "Math"]
+    },
+    "12-Arts": {
+      "Category": "Arts",
+      "Subjects": ["History", "Political Science", "Geography", "Sociology", "English"]
+    }
+  },
+  "Diploma": {
+    "Diploma-CSE": {
+      "Category": "Engineering",
+      "Subjects": ["Programming Basics", "Database", "Networking", "Web Development", "OS"]
+    },
+    "Diploma-Mechanical": {
+      "Category": "Engineering",
+      "Subjects": ["Engineering Drawing", "Mechanics", "Thermodynamics", "Workshop", "CAD"]
+    },
+    "Diploma-Electrical": {
+      "Category": "Engineering",
+      "Subjects": ["Electrical Circuits", "Power Systems", "Machines", "Electronics", "Measurements"]
+    },
+    "Diploma-Civil": {
+      "Category": "Engineering",
+      "Subjects": ["Surveying", "Construction Materials", "Structural Engineering", "Geotechnical", "Estimation"]
+    },
+    "Diploma-Agriculture": {
+      "Category": "Agriculture",
+      "Subjects": ["Crop Production", "Irrigation", "Soil Science", "Pest Management", "Horticulture"]
+    },
+    "Diploma-Law": {
+      "Category": "Law",
+      "Subjects": ["Fundamentals of Law", "Legal Drafting", "Contract Law", "Criminal Law", "Family Law"]
+    }
+  },
+  "Graduation": {
+    "BSc-PCM": {
+      "Category": "Science",
+      "Subjects": ["Physics", "Chemistry", "Math", "Computer Science", "Statistics"]
+    },
+    "BSc-PCB": {
+      "Category": "Science",
+      "Subjects": ["Physics", "Chemistry", "Biology", "Zoology", "Botany"]
+    },
+    "BSc-Agriculture": {
+      "Category": "Agriculture",
+      "Subjects": ["Crop Production", "Soil Science", "Plant Breeding", "Agricultural Economics", "Horticulture"]
+    },
+    "BSc-General": {
+      "Category": "Science",
+      "Subjects": ["Physics", "Chemistry", "Math/Biology", "English", "Environmental Science"]
+    },
+    "BA": {
+      "Category": "Arts",
+      "Subjects": ["History", "Political Science", "Sociology", "Economics", "English"]
+    },
+    "BA-LLB": {
+      "Category": "Law",
+      "Subjects": ["Legal Methods", "Contracts", "Family Law", "Constitutional Law", "Criminal Law"]
+    },
+    "BCom": {
+      "Category": "Commerce",
+      "Subjects": ["Financial Accounting", "Business Law", "Economics", "Taxation", "Auditing"]
+    },
+    "BBA": {
+      "Category": "Management",
+      "Subjects": ["Principles of Management", "Marketing", "HRM", "Business Communication", "Finance"]
+    },
+    "BCA": {
+      "Category": "Computer Applications",
+      "Subjects": ["Programming in C", "Data Structures", "Database Management Systems", "Operating Systems", "Computer Networks", "Web Development", "Software Engineering"]
+    },
+    "BTech-CSE": {
+      "Category": "Engineering",
+      "Subjects": ["Programming", "Data Structures", "Database", "Operating System", "Computer Networks"]
+    },
+    "BTech-EEE": {
+      "Category": "Engineering",
+      "Subjects": ["Electrical Circuits", "Power Systems", "Control Systems", "Electronics", "Machines"]
+    },
+    "BTech-Mechanical": {
+      "Category": "Engineering",
+      "Subjects": ["Thermodynamics", "Mechanics", "Fluid Dynamics", "Manufacturing", "Machine Design"]
+    },
+    "BTech-Civil": {
+      "Category": "Engineering",
+      "Subjects": ["Surveying", "Structural Analysis", "Geotechnical Engineering", "Hydraulics", "Environmental Engineering"]
+    },
+    "LLB": {
+      "Category": "Law",
+      "Subjects": ["Contract Law", "Constitutional Law", "Criminal Law", "Family Law", "Jurisprudence"]
+    }
+  },
+  "PostGraduation": {
+    "MSc-Physics": {
+      "Category": "Science",
+      "Subjects": ["Quantum Mechanics", "Electrodynamics", "Statistical Mechanics", "Solid State Physics"]
+    },
+    "MSc-Chemistry": {
+      "Category": "Science",
+      "Subjects": ["Organic Chemistry", "Inorganic Chemistry", "Physical Chemistry", "Spectroscopy"]
+    },
+    "MSc-Math": {
+      "Category": "Science",
+      "Subjects": ["Algebra", "Analysis", "Topology", "Differential Equations"]
+    },
+    "MSc-ComputerScience": {
+      "Category": "Science",
+      "Subjects": ["Algorithms", "Machine Learning", "Database Systems", "Operating Systems"]
+    },
+    "MSc-Agriculture": {
+      "Category": "Agriculture",
+      "Subjects": ["Crop Improvement", "Soil Fertility", "Plant Pathology", "Agribusiness", "Seed Technology"]
+    },
+    "MA": {
+      "Category": "Arts",
+      "Subjects": ["History", "Political Science", "Economics", "Sociology", "Psychology"]
+    },
+    "MCom": {
+      "Category": "Commerce",
+      "Subjects": ["Corporate Accounting", "Business Environment", "Advanced Costing", "Research Methodology"]
+    },
+    "MBA": {
+      "Category": "Management",
+      "Subjects": ["Marketing", "Finance", "Human Resource", "Operations", "Business Analytics"]
+    },
+    "MTech-CSE": {
+      "Category": "Engineering",
+      "Subjects": ["Advanced Algorithms", "AI & ML", "Big Data", "Cloud Computing", "Cyber Security"]
+    },
+    "MTech-Civil": {
+      "Category": "Engineering",
+      "Subjects": ["Structural Engineering", "Transportation Engineering", "Environmental Engineering", "Geotechnical Engineering"]
+    },
+    "LLM": {
+      "Category": "Law",
+      "Subjects": ["Constitutional Law", "Criminal Law", "International Law", "Human Rights", "Corporate Law"]
+    }
+  },
+  
+  "FreelancingCourse": {
+    "WebDevelopment": {
+      "Category": "IT",
+      "Subjects": ["HTML/CSS", "JavaScript", "React/Angular", "Node.js", "Database", "Git"]
+    },
+    "GraphicDesign": {
+      "Category": "Design",
+      "Subjects": ["Photoshop", "Illustrator", "UI/UX Design", "Logo Design", "Branding"]
+    },
+    "DigitalMarketing": {
+      "Category": "Marketing",
+      "Subjects": ["SEO", "Social Media Marketing", "Google Ads", "Content Marketing", "Analytics"]
+    },
+    "VideoEditing": {
+      "Category": "Media",
+      "Subjects": ["Premiere Pro", "After Effects", "DaVinci Resolve", "Motion Graphics", "Color Grading"]
+    },
+    "ContentWriting": {
+      "Category": "Writing",
+      "Subjects": ["Copywriting", "Blog Writing", "SEO Writing", "Technical Writing", "Creative Writing"]
+    },
+    "DataScience": {
+      "Category": "IT",
+      "Subjects": ["Python", "Statistics", "Machine Learning", "Data Visualization", "SQL"]
+    },
+    "MobileAppDevelopment": {
+      "Category": "IT",
+      "Subjects": ["Android (Kotlin/Java)", "iOS (Swift)", "React Native", "Flutter", "Firebase"]
+    }
+  },
+  "Professional": {
+    "SoftwareEngineer": {
+      "Category": "IT",
+      "Subjects": ["Programming", "System Design", "Algorithms", "Database", "Cloud Computing"]
+    },
+    "Accountant": {
+      "Category": "Finance",
+      "Subjects": ["Financial Accounting", "Taxation", "Auditing", "GST", "Financial Analysis"]
+    },
+    "MarketingManager": {
+      "Category": "Marketing",
+      "Subjects": ["Digital Marketing", "Brand Management", "Market Research", "Sales", "Strategy"]
+    },
+    "HRManager": {
+      "Category": "HR",
+      "Subjects": ["Recruitment", "Training & Development", "Compensation", "Labor Laws", "Performance Management"]
+    },
+    "Lawyer": {
+      "Category": "Law",
+      "Subjects": ["Corporate Law", "Civil Law", "Criminal Law", "Family Law", "Intellectual Property"]
+    },
+    "Doctor": {
+      "Category": "Medical",
+      "Subjects": ["General Medicine", "Anatomy", "Pharmacology", "Pathology", "Clinical Practice"]
+    },
+    "Engineer": {
+      "Category": "Engineering",
+      "Subjects": ["Project Management", "Technical Design", "Quality Control", "Safety Standards", "Maintenance"]
+    },
+    "Teacher": {
+      "Category": "Education",
+      "Subjects": ["Pedagogy", "Curriculum Design", "Assessment Methods", "Classroom Management", "Educational Psychology"]
+    },
+    "Designer": {
+      "Category": "Creative",
+      "Subjects": ["UI/UX Design", "Graphic Design", "Product Design", "Illustration", "Typography"]
+    }
+  },
+
+  "Other": {
+    "Fitness Beginner": {
+      "Category": "Fitness",
+      "Subjects": ["Yoga Basics", "Zumba Moves", "Stretching", "Warm-up Exercises"]
+    },
+    "Fitness Intermediate": {
+      "Category": "Fitness",
+      "Subjects": ["Cardio Training", "Strength Building", "CrossFit", "Functional Training"]
+    },
+    "Fitness Advanced": {
+      "Category": "Fitness",
+      "Subjects": ["HIIT Workouts", "Bodybuilding", "Endurance Training", "Athlete Conditioning"]
+    },
+    "Music Beginner": {
+      "Category": "Music",
+      "Subjects": ["Introduction to Music", "Basic Notes", "Singing Fundamentals", "Rhythm Practice"]
+    },
+    "Music Intermediate": {
+      "Category": "Music",
+      "Subjects": ["Guitar", "Piano", "Drums", "Music Composition"]
+    },
+    "Music Advanced": {
+      "Category": "Music",
+      "Subjects": ["Sound Engineering", "Music Production", "Mixing & Mastering", "Live Performance"]
+    },
+    "Dance Beginner": {
+      "Category": "Dance",
+      "Subjects": ["Basic Steps", "Body Movement", "Freestyle", "Rhythm Coordination"]
+    },
+    "Dance Intermediate": {
+      "Category": "Dance",
+      "Subjects": ["Hip Hop", "Contemporary", "Bollywood", "Jazz"]
+    },
+    "Dance Advanced": {
+      "Category": "Dance",
+      "Subjects": ["Ballet", "Salsa", "Choreography", "Stage Performance"]
+    }
+  }
+}

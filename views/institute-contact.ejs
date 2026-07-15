@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Request - <%= instituteName %></title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7fa;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px 30px;
+            text-align: center;
+            color: #ffffff;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 40px 30px;
+        }
+        
+        .greeting {
+            font-size: 18px;
+            color: #333333;
+            margin-bottom: 20px;
+        }
+        
+        .message {
+            font-size: 15px;
+            color: #555555;
+            margin-bottom: 30px;
+            line-height: 1.8;
+        }
+        
+        .institute-info {
+            background-color: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            margin: 30px 0;
+            border-radius: 8px;
+        }
+        
+        .institute-info h3 {
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+        
+        .info-row {
+            display: flex;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        
+        .info-label {
+            font-weight: 600;
+            color: #333333;
+            min-width: 140px;
+        }
+        
+        .info-value {
+            color: #555555;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #ffffff;
+            padding: 15px 40px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            transition: transform 0.2s;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .button-container {
+            text-align: center;
+            margin: 30px 0;
+        }
+        
+        .note {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #856404;
+        }
+        
+        .contact-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 30px;
+        }
+        
+        .contact-section h4 {
+            color: #333333;
+            margin-bottom: 12px;
+            font-size: 16px;
+        }
+        
+        .contact-info {
+            font-size: 14px;
+            color: #555555;
+            line-height: 1.8;
+        }
+        
+        .footer {
+            background-color: #2d3748;
+            color: #ffffff;
+            padding: 30px;
+            text-align: center;
+            font-size: 13px;
+        }
+        
+        .footer p {
+            margin-bottom: 10px;
+            opacity: 0.8;
+        }
+        
+        .social-links {
+            margin-top: 20px;
+        }
+        
+        .social-links a {
+            display: inline-block;
+            margin: 0 10px;
+            color: #ffffff;
+            text-decoration: none;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+        
+        .social-links a:hover {
+            opacity: 1;
+        }
+        
+        .divider {
+            height: 1px;
+            background-color: #e2e8f0;
+            margin: 30px 0;
+        }
+        
+        @media only screen and (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            .header {
+                padding: 30px 20px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+            
+            .content {
+                padding: 30px 20px;
+            }
+            
+            .info-row {
+                flex-direction: column;
+            }
+            
+            .info-label {
+                margin-bottom: 4px;
+            }
+            
+            .cta-button {
+                display: block;
+                padding: 12px 30px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header Section -->
+        <div class="header">
+            <h1>🎓 Connection Request</h1>
+            <p>Partnership Opportunity</p>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="content">
+            <p class="greeting">Dear <%= recipientName || 'Administrator' %>,</p>
+            
+            <p class="message">
+                We hope this email finds you well. We are reaching out from <strong><%= instituteName %></strong> 
+                with an exciting opportunity to establish a connection and explore potential collaboration.
+            </p>
+            
+            <p class="message">
+                <%= message || 'We believe that partnering with your esteemed institution could create valuable opportunities for both our organizations and, most importantly, benefit our students and academic communities.' %>
+            </p>
+            
+            <!-- Institute Information Box -->
+            <div class="institute-info">
+                <h3>📋 Institute Details</h3>
+                
+                <div class="info-row">
+                    <span class="info-label">Institute Name:</span>
+                    <span class="info-value"><%= instituteName %></span>
+                </div>
+                
+                <% if (instituteEmail) { %>
+                <div class="info-row">
+                    <span class="info-label">Email:</span>
+                    <span class="info-value"><%= instituteEmail %></span>
+                </div>
+                <% } %>
+                
+                <% if (institutePhone) { %>
+                <div class="info-row">
+                    <span class="info-label">Phone:</span>
+                    <span class="info-value"><%= institutePhone %></span>
+                </div>
+                <% } %>
+                
+                <% if (instituteAddress) { %>
+                <div class="info-row">
+                    <span class="info-label">Address:</span>
+                    <span class="info-value"><%= instituteAddress %></span>
+                </div>
+                <% } %>
+                
+                <% if (instituteWebsite) { %>
+                <div class="info-row">
+                    <span class="info-label">Website:</span>
+                    <span class="info-value"><a href="<%= instituteWebsite %>" style="color: #667eea; text-decoration: none;"><%= instituteWebsite %></a></span>
+                </div>
+                <% } %>
+                
+                <% if (establishedYear) { %>
+                <div class="info-row">
+                    <span class="info-label">Established:</span>
+                    <span class="info-value"><%= establishedYear %></span>
+                </div>
+                <% } %>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <!-- Call to Action -->
+            <p class="message">
+                We would be delighted to discuss this opportunity further and explore how we can work together 
+                to achieve our mutual goals.
+            </p>
+            
+                      
+            <!-- Note Section -->
+            <div class="note">
+                <strong>⚠️ Note:</strong> This connection request will expire in <%= expiryDays || '7' %> days. 
+                Please respond at your earliest convenience.
+            </div>
+            
+            <!-- Contact Section -->
+            <div class="contact-section">
+                <h4>📞 Need More Information?</h4>
+                <div class="contact-info">
+                    <p>Feel free to reach out to us directly:</p>
+                    <p><strong>Contact Person:</strong> <%= contactPerson || 'Administrator' %></p>
+                    <% if (contactEmail) { %>
+                    <p><strong>Email:</strong> <a href="mailto:<%= contactEmail %>" style="color: #667eea; text-decoration: none;"><%= contactEmail %></a></p>
+                    <% } %>
+                    <% if (contactPhone) { %>
+                    <p><strong>Phone:</strong> <%= contactPhone %></p>
+                    <% } %>
+                </div>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <p class="message" style="margin-bottom: 0;">
+                We look forward to hearing from you soon and beginning a fruitful partnership.
+            </p>
+            
+            <p class="message" style="margin-top: 20px;">
+                <strong>Best regards,</strong><br>
+                <%= senderName || instituteName %><br>
+                <% if (senderDesignation) { %>
+                <em><%= senderDesignation %></em><br>
+                <% } %>
+                <%= instituteName %>
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p>&copy; <%= new Date().getFullYear() %> <%= instituteName %>. All rights reserved.</p>
+            <p>This is an automated email. Please do not reply directly to this message.</p>
+            
+            <% if (showSocialLinks) { %>
+            <div class="social-links">
+                <% if (facebookUrl) { %>
+                <a href="<%= facebookUrl %>">Facebook</a>
+                <% } %>
+                <% if (linkedinUrl) { %>
+                <a href="<%= linkedinUrl %>">LinkedIn</a>
+                <% } %>
+                <% if (twitterUrl) { %>
+                <a href="<%= twitterUrl %>">Twitter</a>
+                <% } %>
+            </div>
+            <% } %>
+            
+        </div>
+    </div>
+</body>
+</html>

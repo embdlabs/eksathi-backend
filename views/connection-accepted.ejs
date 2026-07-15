@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Request Accepted</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f9f9f9;
+        }
+        
+        .email-container {
+            background-color: #ffffff;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-align: center;
+            padding: 30px 20px;
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+        
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .greeting {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        
+        .main-message {
+            background-color: #f8f9fa;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .connection-details {
+            background-color: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f3f4;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        
+        .detail-value {
+            color: #6c757d;
+        }
+        
+        .next-steps {
+            background-color: #e8f4fd;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .next-steps h3 {
+            color: #1e6bb8;
+            margin-top: 0;
+        }
+        
+        .next-steps ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .next-steps li {
+            margin: 8px 0;
+            color: #495057;
+        }
+        
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            text-decoration: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-weight: 600;
+            text-align: center;
+            margin: 20px 0;
+            transition: transform 0.2s;
+        }
+        
+        .cta-button:hover {
+            transform: translateY(-2px);
+            text-decoration: none;
+            color: white;
+        }
+        
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .footer p {
+            margin: 5px 0;
+        }
+        
+        .social-links {
+            margin: 15px 0;
+        }
+        
+        .social-links a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+        
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            
+            .content {
+                padding: 20px;
+            }
+            
+            .detail-row {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            
+            .detail-value {
+                margin-top: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <!-- Header -->
+        <div class="header">
+            <span class="success-icon">🎉</span>
+            <h1>Connection Accepted!</h1>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <div class="greeting">
+                Hello <%= recipientName %>,
+            </div>
+            
+            <div class="main-message">
+                <% if (userType === 'tutor') { %>
+                    <p><strong>Great news!</strong> A student has accepted your tutoring services and is ready to start learning with you.</p>
+                <% } else { %>
+                    <p><strong>Exciting news!</strong> Your tutor has accepted your connection request and is ready to help you achieve your learning goals.</p>
+                <% } %>
+            </div>
+            
+            <!-- Connection Details -->
+            <div class="connection-details">
+                <h3 style="margin-top: 0; color: #2c3e50;">
+                    <% if (userType === 'tutor') { %>
+                        📚 Your New Student
+                    <% } else { %>
+                        👨‍🏫 Your New Tutor
+                    <% } %>
+                </h3>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Name:</span>
+                    <span class="detail-value"><%= connectedWithName %></span>
+                </div>
+                
+                <div class="detail-row">
+                    <span class="detail-label">Email:</span>
+                    <span class="detail-value"><%= connectedWithEmail %></span>
+                </div>
+            </div>
+            
+            <!-- Next Steps -->
+            <div class="next-steps">
+                <h3>What's Next?</h3>
+                <% if (userType === 'tutor') { %>
+                    <ul>
+                        <li><strong>Reach out:</strong> Contact your new student to discuss their learning goals and schedule</li>
+                        <li><strong>Plan sessions:</strong> Create a personalized learning plan that fits their needs</li>
+                        <li><strong>Set expectations:</strong> Discuss session format, frequency, and learning objectives</li>
+                        <li><strong>Start teaching:</strong> Begin your tutoring journey and help them succeed!</li>
+                    </ul>
+                <% } else { %>
+                    <ul>
+                        <li><strong>Get in touch:</strong> Your tutor may reach out to you soon to discuss your learning goals</li>
+                        <li><strong>Prepare questions:</strong> Think about what you'd like to learn and any specific challenges you're facing</li>
+                        <li><strong>Schedule sessions:</strong> Work with your tutor to find convenient times for both of you</li>
+                        <li><strong>Start learning:</strong> Begin your educational journey with personalized guidance!</li>
+                    </ul>
+                <% } %>
+            </div>
+            
+            <!-- Call to Action -->
+            <div style="text-align: center;">
+                <a href="<%= frontendUrl %>" class="cta-button">
+                    <% if (userType === 'tutor') { %>
+                        View Student Profile
+                    <% } else { %>
+                        Access Your Dashboard
+                    <% } %>
+                </a>
+            </div>
+            
+            <p style="color: #6c757d; font-size: 14px; margin-top: 20px;">
+                <% if (userType === 'tutor') { %>
+                    Remember to maintain professionalism and create a positive learning environment for your student. Good luck with your tutoring sessions!
+                <% } else { %>
+                    We're excited for you to start this learning journey! Don't hesitate to communicate openly with your tutor about your goals and preferences.
+                <% } %>
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>Need help?</strong> Contact our support team</p>
+            <div class="social-links">
+                <a href="#">Help Center</a> |
+                <a href="#">Contact Support</a> |
+                <a href="#">Terms of Service</a>
+            </div>
+            <p>© 2024 TutorConnect Platform. All rights reserved.</p>
+            <p style="font-size: 12px; color: #adb5bd;">
+                You received this email because a connection was made on your tutoring platform account.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
