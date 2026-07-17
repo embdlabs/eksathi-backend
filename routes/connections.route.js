@@ -40,8 +40,9 @@ ConnectionRouter.get('/sent-pending', routeVerifierJwt, pendingRequestsSent);
 // Get pending requests received by the user
 ConnectionRouter.get('/received-pending', routeVerifierJwt, pendingRequestsReceived);
 
-// Get all accepted connections
-ConnectionRouter.get('/', routeVerifierJwt, getConnections);
+// Accepted connections list is public (profile Connections tab for guests).
+// Pending / send / action routes stay auth-protected below.
+ConnectionRouter.get('/', getConnections);
 
 // Accept or reject a connection request (with question creation on accept)
 ConnectionRouter.put('/action/:connectionId', routeVerifierJwt, actionConnection);

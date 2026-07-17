@@ -420,6 +420,10 @@ const pendingRequestsReceived = async (req, res) => {
 const getConnections = async (req, res) => {
   const { userId } = req.query;
 
+  if (!userId || userId === "undefined" || userId === "null") {
+    return res.status(400).json({ message: "userId is required" });
+  }
+
   try {
     mysqlcon.query(
       `SELECT DISTINCT users.id, users.username, users.first_name, users.last_name, users.email, users.role, users.bio, users.avatar_url, connections.status 
