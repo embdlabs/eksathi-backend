@@ -47,16 +47,24 @@ require("./model/db");
 
 const allowedOrigins =
   process.env.NODE_ENV === "production"
-    ? ["https://www.eksathi.com"]
+    ? [
+        "https://www.eksathi.com",
+        "https://eksathi.com",
+      ]
     : [
         "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "https://unrivaled-salamander-c78b0c.netlify.app/",
       ];
 
 const corsOptions = {
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
+    if (
+      allowedOrigins.includes(origin) ||
+      /\.vercel\.app$/.test(origin) ||
+      /\.eksathi\.com$/.test(origin)
+    ) {
       return callback(null, true);
     } else {
       return callback(new Error("Not allowed by CORS"));

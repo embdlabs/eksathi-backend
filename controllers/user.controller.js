@@ -2109,10 +2109,23 @@ const getUsers = async (req, res) => {
     search,
     userId = null,
   } = req.query;
-  const startIndex = (page - 1) * limit;
+
+  const pageNum = Math.max(parseInt(page, 10) || 1, 1);
+  const pageLimit = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
+  const startIndex = (pageNum - 1) * pageLimit;
+
+  const hasValue = (val) =>
+    val !== undefined &&
+    val !== null &&
+    val !== "" &&
+    val !== "undefined" &&
+    val !== "null";
+
   try {
+    // Avoid GROUP BY + GROUP_CONCAT(ORDER BY JSON): skills.skill_name is JSON and
+    // that pattern 500s on MySQL (production /app/user). Use scalar subqueries instead.
     let query = `
-        SELECT u.id,
+      SELECT u.id,
         u.first_name,
         u.last_name,
         u.avatar_url,
@@ -2125,123 +2138,125 @@ const getUsers = async (req, res) => {
         up.education,
         up.profession,
         up.classLevel,
-        up.rating as profile_rating,
-        l.city_name,
-        l.pincode,
-        l.district,
-        l.state_name,
-        l.area,
-        COALESCE(GROUP_CONCAT(s.skill_name ORDER BY s.skill_name SEPARATOR ', '), '') AS skills
-        FROM users AS u
-        LEFT JOIN user_profiles AS up ON u.id = up.user_id
-        LEFT JOIN skills AS s ON u.id = s.user_id
-        LEFT JOIN locations AS l ON u.id = l.user_id
-        WHERE 1=1
-      `;
+        up.rating AS profile_rating,
+        (
+          SELECT l.city_name FROM locations l
+          WHERE l.user_id = u.id LIMIT 1
+        ) AS city_name,
+        (
+          SELECT l.pincode FROM locations l
+          WHERE l.user_id = u.id LIMIT 1
+        ) AS pincode,
+        (
+          SELECT l.district FROM locations l
+          WHERE l.user_id = u.id LIMIT 1
+        ) AS district,
+        (
+          SELECT l.state_name FROM locations l
+          WHERE l.user_id = u.id LIMIT 1
+        ) AS state_name,
+        (
+          SELECT l.area FROM locations l
+          WHERE l.user_id = u.id LIMIT 1
+        ) AS area,
+        COALESCE((
+          SELECT GROUP_CONCAT(DISTINCT CAST(s.skill_name AS CHAR) SEPARATOR ', ')
+          FROM skills s
+          WHERE s.user_id = u.id
+        ), '') AS skills
+      FROM users AS u
+      LEFT JOIN user_profiles AS up ON u.id = up.user_id
+      WHERE 1=1
+    `;
 
     const params = [];
 
-    // Default Role Filtering
     if (teacher === "true" || professional === "true" || student === "true") {
       const roles = [];
       if (teacher === "true") roles.push("teacher");
       if (professional === "true") roles.push("professional");
       if (student === "true") roles.push("student");
-
       query += ` AND u.role IN (${roles.map(() => "?").join(", ")})`;
       params.push(...roles);
     } else {
-      query += ` AND u.role IN ('teacher', 'professional','student')`;
+      query += ` AND u.role IN ('teacher', 'professional', 'student')`;
     }
 
-    // Add filters
-    if (
-      location &&
-      location !== "" &&
-      location !== "undefined" &&
-      location !== "null"
-    ) {
-      query += ` AND l.city_name = ?`;
+    if (hasValue(location)) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM locations l
+        WHERE l.user_id = u.id AND l.city_name = ?
+      )`;
       params.push(location);
     }
 
-    if (skill && skill !== "" && skill !== "undefined" && skill !== "null") {
-      query += ` AND JSON_UNQUOTE(s.skill_name) LIKE ? AND s.proficiency_level = 'Expert'`;
+    if (hasValue(skill)) {
+      query += ` AND EXISTS (
+        SELECT 1 FROM skills s
+        WHERE s.user_id = u.id
+          AND CAST(s.skill_name AS CHAR) LIKE ?
+          AND s.proficiency_level = 'Expert'
+      )`;
       params.push(`%${skill}%`);
     }
 
-    if (
-      rating &&
-      rating !== "" &&
-      rating !== "undefined" &&
-      rating !== "null"
-    ) {
+    if (hasValue(rating)) {
       query += ` AND up.rating = ?`;
       params.push(rating);
     }
 
-    if (
-      subject &&
-      subject !== "" &&
-      subject !== "undefined" &&
-      subject !== "null"
-    ) {
-      const subjects = subject.split(",").map((s) => s.trim());
+    if (hasValue(subject)) {
+      const subjects = String(subject)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-      const subjectConditions = subjects
-        .map(
-          () =>
-            "((JSON_VALID(u.subject) AND JSON_CONTAINS(u.subject, ?)) OR u.subject LIKE ?)",
-        )
-        .join(" OR ");
+      if (subjects.length) {
+        const subjectConditions = subjects
+          .map(
+            () =>
+              "((JSON_VALID(u.subject) AND JSON_CONTAINS(u.subject, ?)) OR CAST(u.subject AS CHAR) LIKE ?)",
+          )
+          .join(" OR ");
 
-      query += ` AND (${subjectConditions})`;
+        query += ` AND (${subjectConditions})`;
 
-      subjects.forEach((s) => {
-        params.push(`"${s}"`);
-        params.push(`%${s}%`);
-      });
+        subjects.forEach((s) => {
+          params.push(JSON.stringify(s));
+          params.push(`%${s}%`);
+        });
+      }
     }
 
-    // ✅ FIXED: Search now includes skills and is_online status (case-insensitive)
-    if (
-      search &&
-      search !== "" &&
-      search !== "undefined" &&
-      search !== "null"
-    ) {
-      const searchLower = search.toLowerCase().trim();
+    if (hasValue(search)) {
+      const searchLower = String(search).toLowerCase().trim();
 
-      // Check if search term is "online" or "offline" (case-insensitive)
       if (searchLower === "online") {
         query += ` AND u.is_online = 'true'`;
       } else if (searchLower === "offline") {
         query += ` AND u.is_online = 'false'`;
       } else {
         query += ` AND (
-          u.first_name LIKE ? 
+          u.first_name LIKE ?
           OR u.last_name LIKE ?
-          OR JSON_UNQUOTE(s.skill_name) LIKE ? 
-          OR u.location LIKE ? 
+          OR CAST(u.location AS CHAR) LIKE ?
           OR up.location LIKE ?
-          OR l.city_name LIKE ?
-          OR l.state_name LIKE ?
-          OR l.area LIKE ?
+          OR EXISTS (
+            SELECT 1 FROM skills s
+            WHERE s.user_id = u.id AND CAST(s.skill_name AS CHAR) LIKE ?
+          )
+          OR EXISTS (
+            SELECT 1 FROM locations l
+            WHERE l.user_id = u.id AND (
+              l.city_name LIKE ? OR l.state_name LIKE ? OR l.area LIKE ?
+            )
+          )
         )`;
-        params.push(
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-          `%${search}%`,
-        );
+        const like = `%${search}%`;
+        params.push(like, like, like, like, like, like, like, like);
       }
     }
 
-    // Add sorting
     let orderBy = `u.id`;
     if (sortBy === `recent`) {
       orderBy = `u.id DESC`;
@@ -2258,121 +2273,130 @@ const getUsers = async (req, res) => {
     }
 
     query += `
-  GROUP BY u.id, u.first_name, u.last_name, u.avatar_url, u.location, u.username, u.role, up.education, up.profession
-  ORDER BY ${orderBy}
-  LIMIT ${startIndex}, ${limit}
-`;
+      ORDER BY ${orderBy}
+      LIMIT ${startIndex}, ${pageLimit}
+    `;
 
     mysqlcon.query(query, params, async (err, users) => {
       if (err) {
-        console.log(err);
+        console.error("getUsers query error:", err.code, err.sqlMessage);
         return res.status(500).json({ message: "Internal Server Error" });
       }
 
-      // roleCounts (still keeping in case you need it)
       const roleCounts = {
         student: 0,
         teacher: 0,
         professional: 0,
       };
 
-      // Get total users (all roles together)
       const totalUsersQuery = `
-        SELECT COUNT(*) AS totalUsers 
-        FROM users 
-        WHERE role IN ('teacher', 'professional','student')
+        SELECT COUNT(*) AS totalUsers
+        FROM users
+        WHERE role IN ('teacher', 'professional', 'student')
       `;
 
       mysqlcon.query(totalUsersQuery, async (err, totalRes) => {
         if (err) {
-          console.log(err);
+          console.error("getUsers total error:", err.code, err.sqlMessage);
           return res.status(500).json({ message: "Internal Server Error" });
         }
 
         const totalUsers = totalRes[0].totalUsers;
+
+        const enrichUsers = async () => {
+          for (let i = 0; i < users.length; i++) {
+            let ratingValue = users[i].profile_rating;
+            if (ratingValue === undefined || ratingValue === null) {
+              ratingValue = await findUserRating(users[i].id);
+            }
+            users[i].rating =
+              ratingValue !== undefined && ratingValue !== null
+                ? parseFloat(ratingValue)
+                : 0;
+
+            users[i].last_active = await getLastActive(users[i].id);
+            users[i].profession = users[i]?.role;
+
+            if (userId && userId !== "undefined" && userId !== "null") {
+              users[i].connectionStatus = await getConnectionStatus(
+                userId,
+                users[i].id,
+              ).catch((connErr) => {
+                console.log(connErr);
+                return null;
+              });
+            }
+          }
+        };
 
         if (
           student === "true" ||
           teacher === "true" ||
           professional === "true"
         ) {
-          const roleQuery = `
-              SELECT role, COUNT(*) as count
-              FROM users
-              WHERE role IN (?)
-              GROUP BY role
-              `;
-
           const roleParams = [];
           if (student === "true") roleParams.push("student");
           if (teacher === "true") roleParams.push("teacher");
           if (professional === "true") roleParams.push("professional");
 
-          mysqlcon.query(roleQuery, [roleParams], async (err, counts) => {
+          const rolePlaceholders = roleParams.map(() => "?").join(", ");
+          const roleQuery = `
+            SELECT role, COUNT(*) AS count
+            FROM users
+            WHERE role IN (${rolePlaceholders})
+            GROUP BY role
+          `;
+
+          mysqlcon.query(roleQuery, roleParams, async (err, counts) => {
             if (err) {
-              console.log(err);
+              console.error("getUsers roleCounts error:", err.code, err.sqlMessage);
               return res.status(500).json({ message: "Internal Server Error" });
             }
 
-            counts.forEach((row) => {
+            (counts || []).forEach((row) => {
               if (row.role === "student") roleCounts.student = row.count;
               if (row.role === "teacher") roleCounts.teacher = row.count;
               if (row.role === "professional")
                 roleCounts.professional = row.count;
             });
 
-            for (let i = 0; i < users.length; i++) {
-              let ratingValue = users[i].profile_rating;
-              if (ratingValue === undefined || ratingValue === null) {
-                ratingValue = await findUserRating(users[i].id);
-              }
-              users[i].rating =
-                ratingValue !== undefined && ratingValue !== null
-                  ? parseFloat(ratingValue)
-                  : 0;
-
-              const lastActive = await getLastActive(users[i].id);
-              users[i].last_active = lastActive;
-              users[i].profession = users[i]?.role;
-
-              if (userId && userId !== "undefined") {
-                const connectionStatus = await getConnectionStatus(
-                  userId,
-                  users[i].id,
-                ).catch((err) => console.log(err));
-                users[i].connectionStatus = connectionStatus;
-              }
+            try {
+              await enrichUsers();
+              const expertises = await getAvailableExpertise();
+              return res.status(200).json({
+                message: "Users Found",
+                users,
+                expertises,
+                roleCounts,
+                totalUsers,
+              });
+            } catch (enrichErr) {
+              console.error("getUsers enrich error:", enrichErr);
+              return res.status(500).json({ message: "Internal Server Error" });
             }
-
-            // let locations = await getAvailableLocations();
-            let expertises = await getAvailableExpertise();
-
-            res.status(200).json({
+          });
+        } else {
+          try {
+            await enrichUsers();
+            const locations = await getAvailableLocations();
+            const expertises = await getAvailableExpertise();
+            return res.status(200).json({
               message: "Users Found",
               users,
-              // locations,
+              locations,
               expertises,
               roleCounts,
               totalUsers,
             });
-          });
-        } else {
-          let locations = await getAvailableLocations();
-          let expertises = await getAvailableExpertise();
-
-          res.status(200).json({
-            message: "Users Found",
-            users,
-            locations,
-            expertises,
-            roleCounts,
-            totalUsers,
-          });
+          } catch (enrichErr) {
+            console.error("getUsers enrich error:", enrichErr);
+            return res.status(500).json({ message: "Internal Server Error" });
+          }
         }
       });
     });
   } catch (error) {
-    console.error(error);
+    console.error("getUsers error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 };
