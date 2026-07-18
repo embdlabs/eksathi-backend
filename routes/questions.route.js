@@ -23,7 +23,8 @@ const QuestionRouter = require("express").Router();
 
 //======Questions API========
 QuestionRouter.get("/", getQuestions);
-QuestionRouter.get("/my", routeVerifierJwt, getQuestionsByUserId);
+// Public reads — used by public profile Questions tab for guests
+QuestionRouter.get("/my", getQuestionsByUserId);
 // QuestionRouter.get('/questions/my', routeVerifierJwt, getQuestionsByEmail);
 QuestionRouter.get("/category", routeVerifierJwt, getQuestionsByCategories);
 QuestionRouter.post("/", postQuestion);
@@ -31,7 +32,6 @@ QuestionRouter.post("/featured", getFeaturedQuestions);
 // QuestionRouter.get('/:id', getQuestionsByID);
 QuestionRouter.get(
   "/user-questions/:userId/",
-  routeVerifierJwt,
   getQuestionsByUser
 );
 QuestionRouter.post("/trending", routeVerifierJwt, getTrendingQuestions);
@@ -39,7 +39,7 @@ QuestionRouter.post("/relevant", routeVerifierJwt, getRelevantQuestions);
 QuestionRouter.patch("/hide/:questionId", routeVerifierJwt, hideQuestion);
 QuestionRouter.patch("/unhide/:questionId", routeVerifierJwt, unHideQuestion);
 QuestionRouter.post("/recent", routeVerifierJwt, getRecentQuestions);
-QuestionRouter.get("/total/:userId", routeVerifierJwt, getTotalQuestions);
+QuestionRouter.get("/total/:userId", getTotalQuestions);
 
 QuestionRouter.get("/:slug", routeVerifierJwt, getQuestionsBySlug);
 QuestionRouter.put("/:id", routeVerifierJwt, updateQuestion);
