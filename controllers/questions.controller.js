@@ -1297,64 +1297,86 @@ const getQuestionsByID = async (req, res) => {
 const getQuestionsBySlug = async (req, res) => {
   const slug = req.params.slug;
 
-  if (!slug) {
+  if (!slug || slug === "undefined" || slug === "null") {
     return res.status(400).json({ error: "Slug is required" });
   }
 
   try {
-    let sql = `SELECT * FROM questions WHERE slug = '${slug}'`;
-    mysqlcon.query(sql, async (err, results) => {
-      if (err) {
-        console.log(err);
-        return res.status(500).json({
-          message: "Internal Server Error",
-        });
-      }
-      if (results.length) {
-        for (var i = 0; i < results.length; i++) {
-          let voteCount = await getTotalVotes(results[i].id, "question");
-          let user = await findUser(results[i].user_id);
-          let comments = await findComments(results[i].id, "question");
-          
-          // Fix: Handle both JSON string and plain string cases
+    mysqlcon.query(
+      `SELECT * FROM questions WHERE slug = ? LIMIT 1`,
+      [slug],
+      async (err, results) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({
+            message: "Internal Server Error",
+          });
+        }
+        if (!results?.length) {
+          return res.status(404).json({
+            success: 0,
+            message: "No Questions Found",
+            results: null,
+          });
+        }
+
+        try {
+          const row = results[0];
+          let voteCount = 0;
+          let user = null;
+          let comments = [];
+          try {
+            voteCount = await getTotalVotes(row.id, "question");
+          } catch (e) {
+            console.log("getQuestionsBySlug votes:", e?.message || e);
+          }
+          try {
+            user = await findUser(row.user_id);
+          } catch (e) {
+            console.log("getQuestionsBySlug author:", e?.message || e);
+          }
+          try {
+            comments = await findComments(row.id, "question");
+          } catch (e) {
+            console.log("getQuestionsBySlug comments:", e?.message || e);
+          }
+
           let tags = [];
           try {
-            // First try to parse as JSON
-            if (results[i].tags && typeof results[i].tags === 'string') {
-              tags = JSON.parse(results[i].tags);
-            } else if (results[i].tags) {
-              // If it's already an array/object, use it directly
-              tags = results[i].tags;
+            if (row.tags && typeof row.tags === "string") {
+              tags = JSON.parse(row.tags);
+            } else if (row.tags) {
+              tags = row.tags;
             }
           } catch (error) {
-            // If parsing fails, treat it as a single string tag
-            // You can either create an array with the single tag
-            // or handle it based on your application's needs
-            tags = [results[i].tags];
-            console.log(`Tag parsing warning for question ${results[i].id}: ${error.message}`);
+            tags = [row.tags];
+            console.log(
+              `Tag parsing warning for question ${row.id}: ${error.message}`,
+            );
           }
-          
-          results[i] = {
-            ...results[i],
-            votes: voteCount,
-            author: user,
-            comments,
-            tags,
-          };
+          if (!Array.isArray(tags)) tags = [];
+          // Normalize string tags to { name } for frontend
+          tags = tags.map((t) =>
+            typeof t === "string" ? { name: t } : t,
+          );
+
+          return res.status(200).json({
+            success: 1,
+            message: "Question Fetched Successfully",
+            results: {
+              ...row,
+              votes: voteCount,
+              author: user,
+              comments,
+              tags,
+            },
+          });
+        } catch (enrichErr) {
+          console.error("getQuestionsBySlug enrich:", enrichErr);
+          return res.status(500).json({ message: "Internal Server Error" });
         }
-        return res.status(200).json({
-          success: 1,
-          message: "Question Fetched Successfully",
-          results: results[0],
-        });
-      } else {
-        return res.status(200).json({
-          success: 1,
-          message: "No Questions Found",
-          results,
-        });
-      }
-    });
+      },
+    );
   } catch (error) {
     console.log(error);
     res.status(400).json({ message: "Something went wrong" });

@@ -5,7 +5,8 @@ const AnswersRouter = require("express").Router();
 
 //=======Answers API ========
 AnswersRouter.post('/', routeVerifierJwt, postAnswer);
-AnswersRouter.get('/',routeVerifierJwt, getAnswers);
+// Public read of answers for a question (Wall detail); writes stay JWT-protected
+AnswersRouter.get('/', getAnswers);
 // Public reads first (before /:id) — public profile Answers tab for guests
 AnswersRouter.get('/my/ans', answeredQuestions);
 AnswersRouter.get('/totalAnswer/:userId', getTotalAnswer);
