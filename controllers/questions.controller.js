@@ -143,9 +143,20 @@ const {
 // };
 
 const getQuestions = async (req, res) => {
+  // ENUM vote_type cannot be SUM()'d as a number — use CASE (same pattern as getSingleQuestion)
+  const voteScoreSql = `
+    (SELECT COALESCE(SUM(
+      CASE
+        WHEN v.vote_type = 'upvote' THEN 1
+        WHEN v.vote_type = 'downvote' THEN -1
+        ELSE 0
+      END
+    ), 0) FROM votes v WHERE v.question_id = q.id)
+  `;
+
   try {
-    const sort = req.query.sort || 'newest';
-    const filter = req.query.filter || '';
+    const sort = req.query.sort || "newest";
+    const filter = req.query.filter || "";
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const offset = (page - 1) * limit;
@@ -157,16 +168,16 @@ const getQuestions = async (req, res) => {
       FROM questions q
       WHERE q.is_hidden = 0
     `;
-    
+
     let questionIdsParams = [];
-    
+
     // Apply filters
     if (filter === "answered") {
       questionIdsSql += ` AND EXISTS (SELECT 1 FROM answers a WHERE a.question_id = q.id)`;
     } else if (filter === "unanswered") {
       questionIdsSql += ` AND NOT EXISTS (SELECT 1 FROM answers a WHERE a.question_id = q.id)`;
     }
-    
+
     if (sort === "my-questions" && userId) {
       questionIdsSql += ` AND q.user_id = ?`;
       questionIdsParams.push(userId);
@@ -174,10 +185,10 @@ const getQuestions = async (req, res) => {
       questionIdsSql += ` AND EXISTS (SELECT 1 FROM answers a WHERE a.question_id = q.id AND a.user_id = ?)`;
       questionIdsParams.push(userId);
     }
-    
+
     // Get count
     const countSql = `SELECT COUNT(*) as total FROM (${questionIdsSql}) as temp`;
-    
+
     // Add ORDER BY and LIMIT for pagination
     switch (sort) {
       case "newest":
@@ -187,144 +198,231 @@ const getQuestions = async (req, res) => {
         questionIdsSql += ` ORDER BY (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) ASC, q.createdAt DESC`;
         break;
       case "popular":
-        questionIdsSql += ` ORDER BY 
-          (SELECT COALESCE(SUM(vote_type), 0) FROM votes v WHERE v.question_id = q.id) DESC,
+        questionIdsSql += ` ORDER BY
+          ${voteScoreSql} DESC,
           (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) DESC,
           q.createdAt DESC`;
         break;
       case "highest-votes":
-        questionIdsSql += ` ORDER BY (SELECT COALESCE(SUM(vote_type), 0) FROM votes v WHERE v.question_id = q.id) DESC, q.createdAt DESC`;
+        questionIdsSql += ` ORDER BY ${voteScoreSql} DESC, q.createdAt DESC`;
         break;
       default:
         questionIdsSql += ` ORDER BY q.createdAt DESC`;
     }
-    
+
     questionIdsSql += ` LIMIT ?, ?`;
-    const questionIdsParamsWithPagination = [...questionIdsParams, offset, limit];
-    
-    console.log("Question IDs SQL:", questionIdsSql);
-    console.log("Question IDs Params:", questionIdsParamsWithPagination);
+    const questionIdsParamsWithPagination = [
+      ...questionIdsParams,
+      offset,
+      limit,
+    ];
 
     // Get total count first
     mysqlcon.query(countSql, questionIdsParams, (countErr, countResult) => {
       if (countErr) {
-        console.error("Count error:", countErr);
-        return res.status(500).json({ error: "Database error", details: countErr.message });
+        console.error(
+          "Count error:",
+          countErr?.code || countErr,
+          countErr?.sqlMessage || countErr?.message
+        );
+        return res
+          .status(500)
+          .json({ error: "Database error", details: countErr.message });
       }
 
       const total = countResult[0]?.total || 0;
 
       // Get question IDs
-      mysqlcon.query(questionIdsSql, questionIdsParamsWithPagination, async (idsErr, idsResult) => {
-        if (idsErr) {
-          console.error("IDs error:", idsErr);
-          return res.status(500).json({ error: "Database error", details: idsErr.message });
-        }
+      mysqlcon.query(
+        questionIdsSql,
+        questionIdsParamsWithPagination,
+        (idsErr, idsResult) => {
+          if (idsErr) {
+            console.error(
+              "IDs error:",
+              idsErr?.code || idsErr,
+              idsErr?.sqlMessage || idsErr?.message
+            );
+            return res
+              .status(500)
+              .json({ error: "Database error", details: idsErr.message });
+          }
 
-        if (idsResult.length === 0) {
-          return res.status(200).json({
-            success: 1,
-            message: "No Questions Found",
-            results: [],
-            pagination: {
-              page,
-              limit,
-              total: 0,
-              totalPages: 0
-            }
-          });
-        }
+          if (!idsResult?.length) {
+            return res.status(200).json({
+              success: 1,
+              message: "No Questions Found",
+              results: [],
+              pagination: {
+                page,
+                limit,
+                total: 0,
+                totalPages: 0,
+              },
+            });
+          }
 
-        // Extract IDs
-        const questionIds = idsResult.map(row => row.id);
-        
-        // Step 2: Get full question details for these IDs
-        const questionsSql = `
+          // Extract IDs
+          const questionIds = idsResult.map((row) => row.id);
+
+          // Step 2: Get full question details for these IDs
+          // Comment count only — loading full comment trees (findComments→findUser×N)
+          // was hanging the Wall list on production.
+          const questionsSql = `
           SELECT 
             q.*,
             c.name as category,
             (SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id) as answer_count,
-            (SELECT COALESCE(SUM(vote_type), 0) FROM votes v WHERE v.question_id = q.id) as vote_count
+            (SELECT COUNT(*) FROM comments cmt WHERE cmt.question_id = q.id) as comment_count,
+            ${voteScoreSql} as vote_count
           FROM questions q
           LEFT JOIN categories c ON q.category_id = c.id
-          WHERE q.id IN (${questionIds.map(() => '?').join(',')})
-          ORDER BY FIELD(q.id, ${questionIds.map(() => '?').join(',')})
+          WHERE q.id IN (${questionIds.map(() => "?").join(",")})
+          ORDER BY FIELD(q.id, ${questionIds.map(() => "?").join(",")})
         `;
-        
-        const questionsParams = [...questionIds, ...questionIds];
-        
-        mysqlcon.query(questionsSql, questionsParams, async (questionsErr, questions) => {
-          if (questionsErr) {
-            console.error("Questions error:", questionsErr);
-            return res.status(500).json({ error: "Database error", details: questionsErr.message });
-          }
 
-          // Process results
-          const processedResults = await Promise.all(questions.map(async (question) => {
-            try {
-              const voteCount = await getTotalVotes(question.id, "question");
-              const author = await findUser(question.user_id);
-              const comments = await findComments(question.id, "question");
-              
-              let tags = [];
-              if (question.tags) {
-                try {
-                  tags = JSON.parse(question.tags);
-                } catch (e) {
-                  console.warn("Error parsing tags:", e.message);
-                }
+          const questionsParams = [...questionIds, ...questionIds];
+
+          mysqlcon.query(
+            questionsSql,
+            questionsParams,
+            async (questionsErr, questions) => {
+              if (questionsErr) {
+                console.error(
+                  "Questions error:",
+                  questionsErr?.code || questionsErr,
+                  questionsErr?.sqlMessage || questionsErr?.message
+                );
+                return res.status(500).json({
+                  error: "Database error",
+                  details: questionsErr.message,
+                });
               }
-// console.log("question is +++++++++++++++++",question)
-              return {
-                id: question.id,
-                title: question.title,
-                body: question.body,
-                user_id: question.user_id,
-                slug: question.slug,
-                tags: tags,
-                createdAt: question.createdAt,
-                category: question.category,
-                answer_count: question.answer_count || 0,
-                vote_count: question.vote_count || 0,
-                isPost:question.isPost || 0,
-                mediaUrl:question.mediaUrl,
-                brief:question.brief,
-                votes: voteCount,
-                author: author,
-                comments: comments
-              };
-            } catch (error) {
-              console.error("Error processing question:", error);
-              return {
-                ...question,
-                votes: 0,
-                author: null,
-                comments: [],
-                tags: []
-              };
-            }
-          }));
 
-          res.status(200).json({
-            success: 1,
-            message: "Questions Fetched Successfully",
-            results: processedResults,
-            pagination: {
-              page,
-              limit,
-              total,
-              totalPages: Math.ceil(total / limit)
+              try {
+                const processedResults = await Promise.all(
+                  (questions || []).map(async (question) => {
+                    try {
+                      let voteCount = {
+                        totalCount: 0,
+                        upVoteCount: 0,
+                        downVoteCount: 0,
+                        noVoteCount: 0,
+                      };
+                      let author = null;
+
+                      try {
+                        voteCount = await getTotalVotes(question.id, "question");
+                      } catch (e) {
+                        console.log("getQuestions votes:", e?.message || e);
+                      }
+
+                      try {
+                        author = await findUser(question.user_id);
+                      } catch (e) {
+                        console.log("getQuestions author:", e?.message || e);
+                      }
+
+                      let tags = [];
+                      if (question.tags) {
+                        if (Array.isArray(question.tags)) {
+                          tags = question.tags;
+                        } else if (typeof question.tags === "string") {
+                          try {
+                            tags = JSON.parse(question.tags);
+                          } catch (e) {
+                            console.warn("Error parsing tags:", e.message);
+                          }
+                        } else if (typeof question.tags === "object") {
+                          tags = question.tags;
+                        }
+                      }
+
+                      const commentCount =
+                        Number(question.comment_count) || 0;
+
+                      return {
+                        id: question.id,
+                        title: question.title,
+                        body: question.body,
+                        user_id: question.user_id,
+                        slug: question.slug,
+                        tags: tags,
+                        createdAt: question.createdAt,
+                        category: question.category,
+                        answer_count: question.answer_count || 0,
+                        comment_count: commentCount,
+                        vote_count: question.vote_count || 0,
+                        isPost: question.isPost || 0,
+                        mediaUrl: question.mediaUrl,
+                        brief: question.brief,
+                        votes: voteCount || {
+                          totalCount: 0,
+                          upVoteCount: 0,
+                          downVoteCount: 0,
+                          noVoteCount: 0,
+                        },
+                        author: author,
+                        // Placeholder length for list UI (comments opened on detail)
+                        comments: Array.from({ length: commentCount }),
+                      };
+                    } catch (error) {
+                      console.error("Error processing question:", error);
+                      return {
+                        id: question.id,
+                        title: question.title,
+                        body: question.body,
+                        user_id: question.user_id,
+                        slug: question.slug,
+                        tags: [],
+                        createdAt: question.createdAt,
+                        category: question.category,
+                        answer_count: question.answer_count || 0,
+                        comment_count: 0,
+                        vote_count: 0,
+                        votes: {
+                          totalCount: 0,
+                          upVoteCount: 0,
+                          downVoteCount: 0,
+                          noVoteCount: 0,
+                        },
+                        author: null,
+                        comments: [],
+                      };
+                    }
+                  })
+                );
+
+                return res.status(200).json({
+                  success: 1,
+                  message: "Questions Fetched Successfully",
+                  results: processedResults,
+                  pagination: {
+                    page,
+                    limit,
+                    total,
+                    totalPages: Math.ceil(total / limit),
+                  },
+                });
+              } catch (enrichErr) {
+                console.error(
+                  "getQuestions enrich:",
+                  enrichErr?.code || enrichErr
+                );
+                return res
+                  .status(500)
+                  .json({ error: "Internal server error" });
+              }
             }
-          });
-        });
-      });
+          );
+        }
+      );
     });
-
   } catch (error) {
     console.error("Controller error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: "Internal server error",
-      details: error.message 
+      details: error.message,
     });
   }
 };
