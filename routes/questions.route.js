@@ -41,7 +41,8 @@ QuestionRouter.patch("/unhide/:questionId", routeVerifierJwt, unHideQuestion);
 QuestionRouter.post("/recent", routeVerifierJwt, getRecentQuestions);
 QuestionRouter.get("/total/:userId", getTotalQuestions);
 
-QuestionRouter.get("/:slug", routeVerifierJwt, getQuestionsBySlug);
+// Public read — home Featured Questions + Wall detail for guests
+QuestionRouter.get("/:slug", getQuestionsBySlug);
 QuestionRouter.put("/:id", routeVerifierJwt, updateQuestion);
 QuestionRouter.delete("/:questionId", routeVerifierJwt, deleteQuestion);
 QuestionRouter.get("/singal/:questionId", getSingleQuestion);
