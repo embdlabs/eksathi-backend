@@ -43,6 +43,12 @@ const trackActivity = require('../middleware/trackActivity');
 const { getInstitute } = require("../controllers/institutes.controller");
 const { getUserSurveyResponse, submitSurveyResponse } = require("../controllers/admin/surveyResponceController");
 const { getSurveyById, getUserSurveys, getSurveyProfile } = require("../controllers/admin/surveyController");
+const {
+  recordProfileView,
+  getProfileViews,
+  updateProfileViewPrefs,
+  getProfileViewPrefs,
+} = require("../controllers/profileViews.controller");
 // const { getConnectionStatus } = require("../service/utilities.service");
 
 const UserRouter = require("express").Router();
@@ -86,6 +92,12 @@ UserRouter.get("/user-profile/:id",  getUserProfile);
 UserRouter.get("/recent/experts", getRecentUsers);
 UserRouter.get("/profile/:username", getUserByUsername);
 UserRouter.get("/profile-completion/:userId", getProfileCompletion);
+
+// Profile views (LinkedIn-style); tables auto-created on first use
+UserRouter.post("/profile-views/:userId", routeVerifierJwt, recordProfileView);
+UserRouter.get("/profile-views/:userId", getProfileViews);
+UserRouter.get("/profile-view-prefs/:userId", routeVerifierJwt, getProfileViewPrefs);
+UserRouter.put("/profile-view-prefs/:userId", routeVerifierJwt, updateProfileViewPrefs);
 UserRouter.get("/profession", getUserProfession);
 
 UserRouter.get("/teachers/nearby/:location", getTeachersData);
@@ -105,7 +117,7 @@ UserRouter.post("/teachers/vote/:id", Teachervote);
 
 
 UserRouter.post("/institutes/vote/:id",routeVerifierJwt, Institutevote);
-UserRouter.get("/rateGyani", getGyaniForRating);
+UserRouter.get("/rateGyani", routeVerifierJwt, getGyaniForRating);
 UserRouter.put('/:id/contact-visibility', useContactVisibility);
 UserRouter.get('/checkConnection', checkConnectionStatus)
 

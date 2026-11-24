@@ -37,8 +37,17 @@ const institutes = require("../models/institutes")(sequelize, DataTypes);
 
 const NodeCache = require("node-cache");
 const { cachedQuery } = require("../utils/db-cache-wrapper");
-const { setToCache, getFromCache } = require("../utils/catch-manage");
+const {
+  setToCache,
+  getFromCache,
+  deleteFromCache,
+} = require("../utils/catch-manage");
 const cache = new NodeCache({ stdTTL: 600 });
+
+const invalidateUserCache = (userId) => {
+  if (!userId) return;
+  deleteFromCache("users", `user_${userId}`);
+};
 
 // const updateActivity = async (req, res) => {
 //   const { userId, isActive } = req.body;
@@ -132,13 +141,18 @@ const updateUser = async (req, res) => {
     columnsToUpdate.push({ column: "display_name", value: userData.dname });
   }
   if (userData.location) {
-    columnsToUpdate.push({ column: "location", value: userData.location });
+    const locValue =
+      typeof userData.location === "string"
+        ? userData.location.slice(0, 200)
+        : JSON.stringify(userData.location).slice(0, 200);
+    columnsToUpdate.push({ column: "location", value: locValue });
   }
   if (userData.bio) {
     columnsToUpdate.push({ column: "bio", value: userData.bio });
   }
   if (userData.contact) {
-    columnsToUpdate.push({ column: "phone", value: userData.contact });
+    const phoneDigits = String(userData.contact).replace(/\D/g, "").slice(0, 15);
+    columnsToUpdate.push({ column: "phone", value: phoneDigits });
   }
   if (imageLink) {
     columnsToUpdate.push({ column: "avatar_url", value: imageLink });
@@ -152,7 +166,7 @@ const updateUser = async (req, res) => {
 
   try {
     // First, get the old avatar URL to delete the file if it exists
-    const getOldAvatarQuery = "SELECT avatar_url FROM users WHERE email = ?";
+    const getOldAvatarQuery = "SELECT id, avatar_url FROM users WHERE email = ?";
 
     mysqlcon.query(getOldAvatarQuery, [email], (err, oldResults) => {
       if (err) {
@@ -174,6 +188,9 @@ const updateUser = async (req, res) => {
         }
 
         if (results.affectedRows === 1) {
+          if (oldResults[0]?.id) {
+            invalidateUserCache(oldResults[0].id);
+          }
           // If a new image was uploaded, delete the old one
           if (imageLink && oldResults.length > 0 && oldResults[0].avatar_url) {
             const fs = require("fs");
@@ -220,6 +237,34 @@ const updateUser = async (req, res) => {
   }
 };
 
+const EDUCATION_ENUM = new Set([
+  "Below 8th Standard",
+  "8th Standard",
+  "9th Standard",
+  "High School",
+  "Intermediate",
+  "Diploma",
+  "Polytechnic",
+  "Graduation",
+  "Post Graduation",
+  "Doctorate",
+]);
+
+const mapClassToEducationEnum = (classname) => {
+  const c = String(classname || "").trim();
+  const n = Number(c);
+  if (!Number.isNaN(n) && n >= 1 && n <= 7) return "Below 8th Standard";
+  if (n === 8) return "8th Standard";
+  if (n === 9) return "9th Standard";
+  if (n === 10) return "High School";
+  if (n === 11 || n === 12) return "Intermediate";
+  if (c === "Graduation") return "Graduation";
+  if (c === "Post Graduation") return "Post Graduation";
+  if (c === "Diploma" || c === "Freelancing Course") return "Diploma";
+  if (EDUCATION_ENUM.has(c)) return c;
+  return null;
+};
+
 const updateUserProfile = async (req, res) => {
   const id = req.params.id;
   const userData = req.body;
@@ -238,34 +283,111 @@ const updateUserProfile = async (req, res) => {
   if (userData.profession) profileUpdates.profession = userData.profession;
   if (userData.designation) profileUpdates.designation = userData.designation;
   if (userData.institute) profileUpdates.institute = userData.institute;
-  if (userData.education) profileUpdates.education = userData.education;
+  // education is an ENUM — never write raw class numbers like "12" (aborts whole UPDATE)
+  {
+    const classKey = userData.classname || userData.classLevel;
+    const edu =
+      (userData.education && EDUCATION_ENUM.has(userData.education)
+        ? userData.education
+        : null) || mapClassToEducationEnum(classKey);
+    if (edu) profileUpdates.education = edu;
+  }
   if (userData.rating) profileUpdates.rating = userData.rating;
   if (userData.school) profileUpdates.school = userData.school;
   if (userData.board) profileUpdates.board = userData.board;
-  if (userData.classname) profileUpdates.classLevel = userData.classname;
-  if (userData.classLevel) profileUpdates.classLevel = userData.classLevel;
-  if (userData.subject) {
-    profileUpdates.selectedSubjects = Array.isArray(userData.subject)
-      ? userData.subject
-      : userData.subject;
+  if (userData.classname !== undefined && userData.classname !== null && userData.classname !== "") {
+    profileUpdates.classLevel = String(userData.classname);
   }
-  if (userData.selectedSubjects) profileUpdates.selectedSubjects = userData.selectedSubjects;
-  if (userData.location) profileUpdates.location = userData.location;
+  if (userData.classLevel !== undefined && userData.classLevel !== null && userData.classLevel !== "") {
+    profileUpdates.classLevel = String(userData.classLevel);
+  }
+
+  const toJsonArray = (value) => {
+    if (value === undefined || value === null || value === "") return null;
+    const arr = Array.isArray(value) ? value : [value];
+    return JSON.stringify(arr);
+  };
+
+  if (userData.subject !== undefined) {
+    const subjectsJson = toJsonArray(userData.subject);
+    if (subjectsJson) profileUpdates.selectedSubjects = subjectsJson;
+  }
+  if (userData.selectedSubjects !== undefined) {
+    const subjectsJson = toJsonArray(userData.selectedSubjects);
+    if (subjectsJson) profileUpdates.selectedSubjects = subjectsJson;
+  }
+  const toLocationJson = (loc) => {
+    if (loc === undefined || loc === null || loc === "") return null;
+    if (typeof loc === "string") return loc;
+    if (typeof loc === "object") return JSON.stringify(loc);
+    return String(loc);
+  };
+  if (userData.location) {
+    // user_profiles.location is varchar(50) — store a short label, not full JSON
+    if (typeof userData.location === "object") {
+      const short =
+        userData.location.city ||
+        userData.location.state ||
+        userData.nearestLocation ||
+        "";
+      if (short) profileUpdates.location = String(short).slice(0, 50);
+    } else if (typeof userData.location === "string") {
+      try {
+        const parsed = JSON.parse(userData.location);
+        const short = parsed?.city || parsed?.state || userData.location;
+        profileUpdates.location = String(short).slice(0, 50);
+      } catch {
+        profileUpdates.location = userData.location.slice(0, 50);
+      }
+    }
+  }
   if (userData.bio) profileUpdates.bio = userData.bio;
+  if (userData.teachingClasses !== undefined) {
+    const classesJson = toJsonArray(userData.teachingClasses);
+    if (classesJson) profileUpdates.teachingClasses = classesJson;
+  }
+  if (userData.offers_teaching !== undefined && userData.offers_teaching !== null) {
+    profileUpdates.offers_teaching =
+      userData.offers_teaching === true ||
+      userData.offers_teaching === 1 ||
+      userData.offers_teaching === "1" ||
+      userData.offers_teaching === "true"
+        ? 1
+        : 0;
+  }
 
   // -------- Collect users updates --------
   const userUpdates = {};
-  if (userData.qualification)
+  if (userData.fname) userUpdates.first_name = userData.fname;
+  if (userData.mname !== undefined) userUpdates.middle_name = userData.mname;
+  if (userData.lname) userUpdates.last_name = userData.lname;
+  if (userData.qualification !== undefined)
     userUpdates.qualification = userData.qualification;
-  if (userData.experience) userUpdates.experience = userData.experience;
+  if (userData.experience !== undefined && userData.experience !== null)
+    userUpdates.experience = userData.experience;
   if (userData.rating) userUpdates.rating = userData.rating;
   if (userData.bio) userUpdates.bio = userData.bio;
   if (userData.dname) userUpdates.display_name = userData.dname;
   if (userData.displayName) userUpdates.display_name = userData.displayName;
-  if (userData.location) userUpdates.location = userData.location;
+  if (userData.role) userUpdates.role = userData.role;
+  if (userData.contact) userUpdates.phone = userData.contact;
+  if (userData.phone) userUpdates.phone = userData.phone;
+  if (userData.location) {
+    const locJson = toLocationJson(userData.location);
+    if (locJson) userUpdates.location = locJson;
+  }
   if (userData.teaching_method) userUpdates.teaching_method = userData.teaching_method;
-  if (userData.subject) userUpdates.subject = userData.subject;
+  if (userData.subject !== undefined) {
+    const subjectsJson = toJsonArray(userData.subject);
+    if (subjectsJson) userUpdates.subject = subjectsJson;
+  }
   if (userData.nearestLocation) userUpdates.nearestLocation = userData.nearestLocation;
+  if (userData.is_online !== undefined && userData.is_online !== null) {
+    userUpdates.is_online =
+      userData.is_online === true || userData.is_online === "true"
+        ? "true"
+        : "false";
+  }
 
   // Auto bio generation
   if (
@@ -278,38 +400,38 @@ const updateUserProfile = async (req, res) => {
   }
 
   try {
-    // -------- Update user_profiles --------
+    // -------- Update user_profiles (await so ENUM errors are not silent 200s) --------
     if (Object.keys(profileUpdates).length > 0) {
-      const query = "UPDATE user_profiles SET ? WHERE user_id = ?";
-      mysqlcon.query(query, [profileUpdates, id], (err, results) => {
-        if (err) {
-          console.error("❌ Profile update error:", err);
-          return res.status(500).json({ message: "Internal Server Error" });
-        }
-
+      try {
+        const [results] = await mysqlpromise.query(
+          "UPDATE user_profiles SET ? WHERE user_id = ?",
+          [profileUpdates, id]
+        );
         if (results.affectedRows === 0) {
-          const insertQuery = "INSERT INTO user_profiles SET ?";
-          const insertData = { user_id: id, ...profileUpdates };
-          mysqlcon.query(insertQuery, insertData, (err) => {
-            if (err) {
-              console.error("❌ Profile insert error:", err);
-              return res.status(500).json({ message: "Internal Server Error" });
-            }
-          });
+          await mysqlpromise.query("INSERT INTO user_profiles SET ?", [
+            { user_id: id, ...profileUpdates },
+          ]);
         }
-      });
+      } catch (err) {
+        console.error("❌ Profile update error:", err);
+        return res.status(500).json({
+          message: "Could not update profile",
+          detail: err?.sqlMessage || err?.message,
+        });
+      }
     }
 
     // -------- Update users --------
     if (Object.keys(userUpdates).length > 0) {
-      const userUpdateQuery = "UPDATE users SET ? WHERE id = ?";
-      mysqlcon.query(userUpdateQuery, [userUpdates, id], (err, userRes) => {
-        if (err) {
-          console.error("❌ Users update error:", err);
-        } else {
-          console.log("✅ Users updated:", userRes);
-        }
-      });
+      try {
+        const [userRes] = await mysqlpromise.query(
+          "UPDATE users SET ? WHERE id = ?",
+          [userUpdates, id]
+        );
+        console.log("✅ Users updated:", userRes);
+      } catch (err) {
+        console.error("❌ Users update error:", err);
+      }
     }
 
     // -------- Update Teachers --------
@@ -324,12 +446,25 @@ const updateUserProfile = async (req, res) => {
       if (userData.experience) teacherData.experience = userData.experience;
       if (userData.rating) teacherData.rating = userData.rating;
 
-      if (userData.subject) teacherData.subject = userData.subject;
+      if (userData.subject !== undefined) {
+        const subjectsJson = toJsonArray(userData.subject);
+        if (subjectsJson) teacherData.subject = subjectsJson;
+      }
       if (userData.classname) teacherData.class = userData.classname;
       if (userData.email) teacherData.contact_info = userData.email;
 
       if (userData.address?.city) teacherData.city = userData.address.city;
       if (userData.address?.state) teacherData.state = userData.address.state;
+
+      // Required Teachers columns need defaults on insert
+      if (!teacherData.qualification) teacherData.qualification = "—";
+      if (teacherData.experience === undefined) teacherData.experience = 0;
+      if (teacherData.rating === undefined) teacherData.rating = 0;
+      if (!teacherData.city) teacherData.city = "—";
+      if (!teacherData.state) teacherData.state = "—";
+      if (!teacherData.subject) teacherData.subject = "[]";
+      if (!teacherData.class) teacherData.class = "—";
+      if (!teacherData.name) teacherData.name = "Teacher";
 
       const teacherUpdateQuery = "UPDATE Teachers SET ? WHERE contact_info = ?";
       mysqlcon.query(
@@ -338,20 +473,31 @@ const updateUserProfile = async (req, res) => {
         (err, teacherResults) => {
           if (err) {
             console.error("❌ Teacher update error:", err);
-            return res.status(500).json({ message: "Internal Server Error" });
+            if (!res.headersSent) {
+              return res.status(500).json({ message: "Internal Server Error" });
+            }
+            return;
           }
 
           if (teacherResults.affectedRows === 0) {
             const teacherInsertQuery = "INSERT INTO Teachers SET ?";
+            const teacherInsertData = {
+              ...teacherData,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            };
             mysqlcon.query(
               teacherInsertQuery,
-              teacherData,
+              teacherInsertData,
               (err, insertRes) => {
                 if (err) {
                   console.error("❌ Teacher insert error:", err);
-                  return res
-                    .status(500)
-                    .json({ message: "Internal Server Error" });
+                  if (!res.headersSent) {
+                    return res
+                      .status(500)
+                      .json({ message: "Internal Server Error" });
+                  }
+                  return;
                 }
                 console.log("✅ Teacher inserted:", insertRes);
               },
@@ -362,6 +508,14 @@ const updateUserProfile = async (req, res) => {
         },
       );
     }
+
+    invalidateUserCache(id);
+
+    // LinkedIn-style Wall blurb (throttled to once/day) — no confidential fields
+    try {
+      const { announceProfileUpdate } = require("../service/wallActivity.service");
+      announceProfileUpdate(id).catch(() => {});
+    } catch (_) { /* ignore */ }
 
     return res
       .status(200)
@@ -535,7 +689,8 @@ const getUserProfile = async (req, res) => {
     return res.status(400).json({ message: "User ID is required" });
   }
 
-  const cacheKey = `userProfile_${userId}`;
+  // v2: password never included in public profile payload
+  const cacheKey = `userProfile_v2_${userId}`;
   const cachedProfile = cache.get(cacheKey);
 
   if (cachedProfile) {
@@ -549,12 +704,12 @@ const getUserProfile = async (req, res) => {
         mysqlpromise.query(
           `
         SELECT 
-          id, username, email, password, role, display_name, 
+          id, username, email, role, display_name, 
           first_name, middle_name, last_name, location, nearestLocation, 
           phone, bio, avatar_url, status, is_online, 
           updatedAt, createdAt, show_contact_details, subject, 
           teaching_method, qualification, experience, rating, 
-          login_count, is_verified
+          login_count, is_verified, phone_verified
         FROM users 
         WHERE id = ?
       `,
@@ -602,12 +757,14 @@ const getUserProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const { password: _pwOmit, ...safeUser } = userRows[0] || {};
     const userProfile = {
       user: {
-        ...userRows[0],
-        show_contact_details: Boolean(userRows[0].show_contact_details),
-        is_verified: Boolean(userRows[0].is_verified),
-        is_online: Boolean(userRows[0].is_online),
+        ...safeUser,
+        show_contact_details: Boolean(safeUser.show_contact_details),
+        is_verified: Boolean(safeUser.is_verified),
+        phone_verified: Boolean(safeUser.phone_verified),
+        is_online: Boolean(safeUser.is_online),
       },
       workExperience: workRows.map((work) => ({
         ...work,
@@ -683,6 +840,11 @@ const getUser = async (req, res) => {
           u.show_contact_details,
           u.qualification,
           u.experience,
+          u.is_verified,
+          u.phone_verified,
+          u.subject,
+          u.teaching_method,
+          u.nearestLocation,
           up.gender,
           up.dob,
           up.profile_pic,
@@ -690,6 +852,12 @@ const getUser = async (req, res) => {
           up.designation,
           up.institute,
           up.education,
+          up.school,
+          up.board,
+          up.classLevel,
+          up.selectedSubjects,
+          up.teachingClasses,
+          COALESCE(up.offers_teaching, 0) AS offers_teaching,
           up.website_url,
           up.twitter_link,
           up.facebook_link,
@@ -754,6 +922,16 @@ const getUser = async (req, res) => {
     const splitString = (str) =>
       str ? str.split(", ").filter((item) => item.trim() !== "") : [];
 
+    const parseJsonField = (value) => {
+      if (value === undefined || value === null || value === "") return null;
+      if (typeof value === "object") return value;
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
+    };
+
     const user = {
       id: userData.id,
       username: userData.username,
@@ -768,6 +946,12 @@ const getUser = async (req, res) => {
       location: userData.location,
       qualification: userData.qualification,
       experience: userData.experience,
+      is_verified: Boolean(userData.is_verified),
+      phone_verified: Boolean(userData.phone_verified),
+      phone: userData.phone,
+      subject: parseJsonField(userData.subject),
+      teaching_method: userData.teaching_method,
+      nearestLocation: userData.nearestLocation,
       profile: {
         profile_pic: userData.profile_pic,
         display_name: userData.display_name,
@@ -784,6 +968,16 @@ const getUser = async (req, res) => {
         designation: userData.designation,
         institute: userData.institute,
         education: userData.education,
+        school: userData.school,
+        board: userData.board,
+        classLevel: userData.classLevel,
+        selectedSubjects: parseJsonField(userData.selectedSubjects),
+        teachingClasses: parseJsonField(userData.teachingClasses),
+        offers_teaching: Boolean(
+          userData.offers_teaching === 1 ||
+            userData.offers_teaching === true ||
+            userData.offers_teaching === "1"
+        ),
         address: {
           address_line_1: userData.address_line_1,
           address_line_2: userData.address_line_2,
@@ -858,7 +1052,13 @@ const getUserByUsername = async (req, res) => {
             u.is_online,
             u.show_contact_details,
             u.rating,
-            
+            u.is_verified,
+            u.phone_verified,
+            u.subject,
+            u.teaching_method,
+            u.nearestLocation,
+            u.qualification,
+            u.experience,
             up.gender,
             up.dob,
             up.profile_pic,
@@ -866,6 +1066,12 @@ const getUserByUsername = async (req, res) => {
             up.designation,
             up.institute,
             up.education,
+            up.school,
+            up.board,
+            up.classLevel,
+            up.selectedSubjects,
+            up.teachingClasses,
+            COALESCE(up.offers_teaching, 0) AS offers_teaching,
             up.website_url,
             up.twitter_link,
             up.facebook_link,
@@ -895,10 +1101,11 @@ const getUserByUsername = async (req, res) => {
           LEFT JOIN certifications c ON u.id = c.user_id
           LEFT JOIN work_experience w ON u.id = w.user_id
           LEFT JOIN research r ON u.id = r.user_id
-          WHERE u.username = ?
+          WHERE (u.username = ? OR CAST(u.id AS CHAR) = ?)
+            AND LOWER(COALESCE(u.role, '')) NOT IN ('admin', 'superadmin')
           GROUP BY u.id, up.id, a.id;
         `;
-    mysqlcon.query(query, [username], async (err, rows) => {
+    mysqlcon.query(query, [username, username], async (err, rows) => {
       if (err) {
         return res.status(500).json({ message: "Internal Server Error" });
       }
@@ -912,6 +1119,16 @@ const getUserByUsername = async (req, res) => {
         ratingValue = await findUserRating(rows[0].id);
       }
 
+      const parseJsonField = (value) => {
+        if (value === undefined || value === null || value === "") return null;
+        if (typeof value === "object") return value;
+        try {
+          return JSON.parse(value);
+        } catch {
+          return value;
+        }
+      };
+
       const user = {
         id: rows[0].id,
         username: rows[0].username,
@@ -923,6 +1140,14 @@ const getUserByUsername = async (req, res) => {
         avatar_url: rows[0].avatar_url,
         role: rows[0].role,
         show_contact_details: rows[0].show_contact_details,
+        is_verified: Boolean(rows[0].is_verified),
+        phone_verified: Boolean(rows[0].phone_verified),
+        phone: rows[0].phone,
+        subject: parseJsonField(rows[0].subject),
+        teaching_method: rows[0].teaching_method,
+        nearestLocation: rows[0].nearestLocation,
+        qualification: rows[0].qualification,
+        experience: rows[0].experience,
         profile: {
           profile_pic: rows[0].profile_pic,
           display_name: rows[0].display_name,
@@ -939,6 +1164,16 @@ const getUserByUsername = async (req, res) => {
           designation: rows[0].designation,
           institute: rows[0].institute,
           education: rows[0].education,
+          school: rows[0].school,
+          board: rows[0].board,
+          classLevel: rows[0].classLevel,
+          selectedSubjects: parseJsonField(rows[0].selectedSubjects),
+          teachingClasses: parseJsonField(rows[0].teachingClasses),
+          offers_teaching: Boolean(
+            rows[0].offers_teaching === 1 ||
+              rows[0].offers_teaching === true ||
+              rows[0].offers_teaching === "1"
+          ),
           address: {
             address_line_1: rows[0].address_line_1,
             address_line_2: rows[0].address_line_2,
@@ -1077,7 +1312,6 @@ const createUser = async (req, res) => {
                 res.status(500).json({ message: "Error signing up user" });
               } else {
                 console.log("User signed up successfully!");
-                console.log("Temporary Password: ", password);
                 const userId = results.insertId;
                 // let clientotp = generateOTP();
                 // console.log("otp", clientotp);
@@ -2105,10 +2339,13 @@ const getUsers = async (req, res) => {
     teacher = "true",
     professional = "true",
     subject,
+    classLevel,
+    classname,
     sortBy,
     search,
     userId = null,
   } = req.query;
+  const classFilter = classLevel || classname;
 
   const pageNum = Math.max(parseInt(page, 10) || 1, 1);
   const pageLimit = Math.min(Math.max(parseInt(limit, 10) || 12, 1), 100);
@@ -2134,10 +2371,15 @@ const getUsers = async (req, res) => {
         u.show_contact_details,
         u.is_online,
         u.subject,
+        u.experience,
         u.location,
         up.education,
         up.profession,
         up.classLevel,
+        up.selectedSubjects,
+        up.teachingClasses,
+        up.teachAllSubjects,
+        COALESCE(up.offers_teaching, 0) AS offers_teaching,
         up.rating AS profile_rating,
         (
           SELECT l.city_name FROM locations l
@@ -2167,27 +2409,39 @@ const getUsers = async (req, res) => {
       FROM users AS u
       LEFT JOIN user_profiles AS up ON u.id = up.user_id
       WHERE 1=1
+        AND LOWER(COALESCE(u.role, '')) NOT IN ('admin', 'superadmin', 'institute')
     `;
 
     const params = [];
 
-    if (teacher === "true" || professional === "true" || student === "true") {
-      const roles = [];
-      if (teacher === "true") roles.push("teacher");
-      if (professional === "true") roles.push("professional");
-      if (student === "true") roles.push("student");
-      query += ` AND u.role IN (${roles.map(() => "?").join(", ")})`;
-      params.push(...roles);
-    } else {
-      query += ` AND u.role IN ('teacher', 'professional', 'student')`;
-    }
+    // Dual students (offers_teaching) appear under Teacher filter when complete;
+    // pure students always under Student; totals stay DISTINCT users.
+    const {
+      buildExpertsRoleVisibilitySql,
+    } = require("../service/ratingRules.service");
+    query += buildExpertsRoleVisibilitySql({
+      teacher,
+      professional,
+      student,
+    });
 
     if (hasValue(location)) {
-      query += ` AND EXISTS (
-        SELECT 1 FROM locations l
-        WHERE l.user_id = u.id AND l.city_name = ?
+      // Match locations table and users.location JSON/string (city list uses both)
+      query += ` AND (
+        EXISTS (
+          SELECT 1 FROM locations l
+          WHERE l.user_id = u.id
+            AND (l.city_name = ? OR l.city_name LIKE ? OR l.district LIKE ?)
+        )
+        OR CAST(u.location AS CHAR) LIKE ?
+        OR (
+          JSON_VALID(u.location)
+          AND JSON_UNQUOTE(JSON_EXTRACT(u.location, '$.city')) = ?
+        )
       )`;
-      params.push(location);
+      const loc = String(location).trim();
+      const locLike = `%${loc}%`;
+      params.push(loc, locLike, locLike, locLike, loc);
     }
 
     if (hasValue(skill)) {
@@ -2226,6 +2480,42 @@ const getUsers = async (req, res) => {
           params.push(`%${s}%`);
         });
       }
+    }
+
+    if (hasValue(classFilter)) {
+      const classVal = String(classFilter).trim();
+      // Also match range buckets like "6-9" when filtering by a single class "7"
+      const rangeMatches = [];
+      if (/^\d+$/.test(classVal)) {
+        const n = Number(classVal);
+        ["1-5", "6-8", "6-9", "9-10", "11-12"].forEach((range) => {
+          const [a, b] = range.split("-").map(Number);
+          if (n >= a && n <= b) rangeMatches.push(range);
+        });
+      }
+      const matchValues = [classVal, ...rangeMatches];
+      const orParts = matchValues
+        .map(
+          () => `(
+          up.classLevel = ?
+          OR CAST(up.classLevel AS CHAR) LIKE ?
+          OR (
+            up.teachingClasses IS NOT NULL
+            AND (
+              (JSON_VALID(up.teachingClasses) AND (
+                JSON_CONTAINS(up.teachingClasses, ?)
+                OR JSON_SEARCH(up.teachingClasses, 'one', ?) IS NOT NULL
+              ))
+              OR CAST(up.teachingClasses AS CHAR) LIKE ?
+            )
+          )
+        )`
+        )
+        .join(" OR ");
+      query += ` AND (${orParts})`;
+      matchValues.forEach((v) => {
+        params.push(v, `%${v}%`, JSON.stringify(v), v, `%${v}%`);
+      });
     }
 
     if (hasValue(search)) {
@@ -2293,6 +2583,7 @@ const getUsers = async (req, res) => {
         SELECT COUNT(*) AS totalUsers
         FROM users
         WHERE role IN ('teacher', 'professional', 'student')
+          AND LOWER(COALESCE(role, '')) NOT IN ('admin', 'superadmin', 'institute')
       `;
 
       mysqlcon.query(totalUsersQuery, async (err, totalRes) => {
@@ -2914,19 +3205,31 @@ const getProfileCompletion = async (req, res) => {
     // console.log("profile Fields : ",profileData)
 
     // Calculate the number of completed fields
-    const completedFields = profileFields?.filter(
-      (field) =>
-        profileData[field] !== undefined &&
-        profileData[field] !== "" &&
-        profileData[field] !== null,
-    );
+    // Empty arrays must NOT count as complete (skills/educations/etc.)
+    const completedFields = profileFields?.filter((field) => {
+      const val = profileData?.[field];
+      if (val === undefined || val === null || val === "") return false;
+      if (Array.isArray(val)) return val.length > 0;
+      return true;
+    });
 
     // Calculate the profile completion percentage
     const completionPercentage =
       (completedFields.length / profileFields.length) * 100;
+    const rounded = Math.round(completionPercentage * 100) / 100;
+
+    // Soft reminder email if under 50% (rate-limited inside helper)
+    try {
+      const {
+        maybeSendIncompleteProfileReminder,
+      } = require("../utils/transactionalMails");
+      maybeSendIncompleteProfileReminder(userId, rounded);
+    } catch (_) {
+      /* non-blocking */
+    }
 
     return res.status(200).json({
-      completionPercentage: Math.round(completionPercentage * 100) / 100,
+      completionPercentage: rounded,
     });
   } catch (error) {
     console.error(error);
@@ -3164,6 +3467,7 @@ const users = async (req, res) => {
       user_profiles.board
     FROM users
     LEFT JOIN user_profiles ON users.id = user_profiles.user_id
+    WHERE LOWER(COALESCE(users.role, '')) IN ('student', 'teacher', 'professional')
   `,
       ttl: 120,
     });
@@ -3190,22 +3494,35 @@ const users = async (req, res) => {
 
 const getGyaniForRating = async (req, res) => {
   try {
-    const userId = req.query.userId;
+    // Identity from JWT only — ignore spoofable ?userId=
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
-    console.log("Gyanis found : ", userId);
+    const {
+      SQL_COMPLETE_PROVIDER,
+    } = require("../service/ratingRules.service");
 
+    // Connected complete providers only (teachers / pros / dual students)
     const query = `
-      SELECT u.id, u.first_name, u.last_name, u.avatar_url, u.email, u.role
+      SELECT DISTINCT
+        u.id, u.first_name, u.last_name, u.avatar_url, u.email, u.role, u.username,
+        COALESCE(up.offers_teaching, 0) AS offers_teaching
       FROM users u
-      JOIN (
-          SELECT DISTINCT a.user_id AS answerer_id
-          FROM answers a
-          JOIN questions q ON a.question_id = q.id
-          WHERE q.user_id = ? AND a.is_rated = 0
-      ) AS answerers ON u.id = answerers.answerer_id
-      WHERE u.id != ? AND u.role != 'student';`;
-    // Querying the database
-    mysqlcon.query(query, [userId, userId], (err, results) => {
+      LEFT JOIN user_profiles up ON up.user_id = u.id
+      INNER JOIN connections c
+        ON c.status = 'accepted'
+       AND (
+         (c.sender_id = ? AND c.receiver_id = u.id)
+         OR (c.receiver_id = ? AND c.sender_id = u.id)
+       )
+      WHERE u.id != ?
+        AND ${SQL_COMPLETE_PROVIDER}
+      ORDER BY u.first_name, u.last_name
+      LIMIT 100`;
+
+    mysqlcon.query(query, [userId, userId, userId], (err, results) => {
       if (err) {
         console.log(err);
         return res.status(500).json({ message: "Internal Server Error" });
@@ -3240,11 +3557,16 @@ const useContactVisibility = async (req, res) => {
 
 const checkConnectionStatus = async (req, res) => {
   try {
-    const { myId, otherId } = req.query;
+    // Prefer JWT identity when present; fall back to query for public callers
+    const myId = req.user?.id || req.query.myId;
+    const { otherId } = req.query;
     if (!myId || !otherId) {
       return res
         .status(400)
         .json({ message: "Both myId and otherId are required" });
+    }
+    if (req.user?.id && req.query.myId != null && String(req.query.myId) !== String(req.user.id)) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     // Assuming DBMODELS.connections is the correct model for connections
@@ -3368,8 +3690,9 @@ const getTeacherSameLocation = async (req, res) => {
 const filterByCityStateAndCountry = (req, res) => {
   try {
     const { city, state, country } = req.query;
+    const { SQL_PUBLIC_USER_ROLE_BARE } = require("../service/ratingRules.service");
 
-    let sql = "SELECT * FROM users WHERE 1=1";
+    let sql = `SELECT * FROM users WHERE ${SQL_PUBLIC_USER_ROLE_BARE}`;
     const values = [];
 
     if (country) {
@@ -3419,39 +3742,40 @@ const filterByCityStateAndCountry = (req, res) => {
 
 const getCities = async (req, res) => {
   try {
-    const cacheKey = `city_list`;
+    // Prefer locations.city_name (same source as Experts location filter),
+    // then fall back to users.location JSON/string cities.
+    const [locRows] = await mysqlcon.promise().query(`
+      SELECT DISTINCT TRIM(city_name) AS city
+      FROM locations
+      WHERE city_name IS NOT NULL AND TRIM(city_name) <> ''
+    `);
+    const [userRows] = await mysqlcon.promise().query(`
+      SELECT DISTINCT
+        CASE
+          WHEN JSON_VALID(location) AND JSON_EXTRACT(location, '$.city') IS NOT NULL
+            THEN JSON_UNQUOTE(JSON_EXTRACT(location, '$.city'))
+          ELSE TRIM(CAST(location AS CHAR))
+        END AS city
+      FROM users
+      WHERE location IS NOT NULL
+        AND location <> ''
+        AND TRIM(CAST(location AS CHAR)) <> '{}'
+        AND LOWER(COALESCE(role, '')) NOT IN ('admin', 'superadmin', 'institute')
+    `);
 
-    const result = await cachedQuery({
-      cacheName: "lists",
-      cacheKey: cacheKey,
-      sql: `
-        SELECT DISTINCT 
-          CASE 
-            WHEN JSON_VALID(location) AND JSON_EXTRACT(location, '$.city') IS NOT NULL
-              THEN JSON_UNQUOTE(JSON_EXTRACT(location, '$.city'))
-            ELSE location
-          END AS city
-        FROM users
-        WHERE location IS NOT NULL 
-          AND location <> ''
-          AND TRIM(location) <> '{}'
-        ORDER BY city
-      `,
-      ttl: 600, // 10 minutes cache for city list
-    });
-
-    // Map rows into an array of city names
-    const cities = result.data
-      .map((row) => row.city)
-      .filter((c) => c && c.trim() !== "") // remove null/empty
-      .sort(); // Optional: sort alphabetically
+    const cities = [
+      ...new Set(
+        [...(locRows || []), ...(userRows || [])]
+          .map((row) => (row?.city != null ? String(row.city).trim() : ""))
+          .filter((c) => c && c !== "null" && !c.startsWith("{"))
+      ),
+    ].sort((a, b) => a.localeCompare(b));
 
     return res.status(200).json({
       success: true,
       cities,
       meta: {
-        cached: result.fromCache,
-        timestamp: result.timestamp,
+        cached: false,
         count: cities.length,
       },
     });
@@ -3465,9 +3789,50 @@ const getCities = async (req, res) => {
   }
 };
 
+/** Canonical school/career class labels — kept in sync for Experts, Search Tutor, profile. */
+const STANDARD_CLASS_OPTIONS = [
+  "Nursery",
+  "LKG",
+  "UKG",
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "10",
+  "11",
+  "12",
+  "Graduation",
+  "Post Graduation",
+  "Diploma",
+  "Freelancing Course",
+];
+
+const sortClassOptions = (list) => {
+  const rank = (c) => {
+    const s = String(c || "").trim();
+    const i = STANDARD_CLASS_OPTIONS.indexOf(s);
+    if (i >= 0) return i;
+    if (/^\d+$/.test(s)) return 100 + Number(s);
+    return 1000;
+  };
+  return [...new Set(list.map((c) => String(c).trim()).filter(Boolean))].sort(
+    (a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    }
+  );
+};
+
 const getTeachingClasses = async (req, res) => {
   try {
-    const cachekey = "class_list";
+    const cachekey = "class_list_v3";
 
     const result = await cachedQuery({
       cacheKey: cachekey,
@@ -3481,13 +3846,12 @@ const getTeachingClasses = async (req, res) => {
     });
 
     const rows = result.data;
-    const classes = [
-      ...new Set(
-        rows
-          .map((row) => row.class_name && row.class_name.trim())
-          .filter(Boolean),
-      ),
-    ];
+    const fromDb = rows
+      .map((row) => row.class_name && row.class_name.trim())
+      .filter(Boolean);
+
+    // Merge DB subject classes with standard 1–12 / Nursery so Search Tutor & Experts stay in sync
+    const classes = sortClassOptions([...STANDARD_CLASS_OPTIONS, ...fromDb]);
 
     return res.status(200).json({ success: true, classes });
   } catch (error) {
@@ -3647,32 +4011,34 @@ const filterBySubject = async (req, res) => {
       sql: `
         SELECT *
         FROM users
-        WHERE 
-          (
-            -- Case 1: subject is JSON array
-            JSON_VALID(subject)
-            AND JSON_TYPE(subject) = 'ARRAY'
-            AND EXISTS (
-              SELECT 1
-              FROM JSON_TABLE(
-                subject,
-                '$[*]' COLUMNS(sub VARCHAR(255) PATH '$')
-              ) jt
-              WHERE LOWER(jt.sub) = ?
+        WHERE LOWER(COALESCE(role, '')) IN ('student', 'teacher', 'professional')
+          AND (
+            (
+              -- Case 1: subject is JSON array
+              JSON_VALID(subject)
+              AND JSON_TYPE(subject) = 'ARRAY'
+              AND EXISTS (
+                SELECT 1
+                FROM JSON_TABLE(
+                  subject,
+                  '$[*]' COLUMNS(sub VARCHAR(255) PATH '$')
+                ) jt
+                WHERE LOWER(jt.sub) = ?
+              )
             )
-          )
-          OR
-          (
-            -- Case 2: subject stored as plain string (not JSON)
-            NOT JSON_VALID(subject)
-            AND LOWER(subject) = ?
-          )
-          OR
-          (
-            -- Case 3: subject stored as JSON string (e.g. "Social Science")
-            JSON_VALID(subject)
-            AND JSON_TYPE(subject) = 'STRING'
-            AND LOWER(JSON_UNQUOTE(subject)) = ?
+            OR
+            (
+              -- Case 2: subject stored as plain string (not JSON)
+              NOT JSON_VALID(subject)
+              AND LOWER(subject) = ?
+            )
+            OR
+            (
+              -- Case 3: subject stored as JSON string (e.g. "Social Science")
+              JSON_VALID(subject)
+              AND JSON_TYPE(subject) = 'STRING'
+              AND LOWER(JSON_UNQUOTE(subject)) = ?
+            )
           )
       `,
       params: [sanitizedSubject, sanitizedSubject, sanitizedSubject],
@@ -4263,6 +4629,14 @@ const getInstituteLength = async (req, res) => {
 const getUserWithRole = async (req, res) => {
   try {
     let { page = 1, limit = 10, role = "" } = req.query;
+    const { PUBLIC_MEMBER_ROLES } = require("../service/ratingRules.service");
+
+    const roleNorm = String(role || "").toLowerCase().trim();
+    if (!PUBLIC_MEMBER_ROLES.includes(roleNorm)) {
+      return res.status(400).json({
+        message: "Invalid role. Use student, teacher, or professional.",
+      });
+    }
 
     page = Number(page);
     limit = Number(limit);
@@ -4292,7 +4666,7 @@ ORDER BY u.createdAt DESC
 LIMIT ? OFFSET ?
     `;
 
-    mysqlcon.query(query, [role, limit, offset], (err, rows) => {
+    mysqlcon.query(query, [roleNorm, limit, offset], (err, rows) => {
       if (err) return res.status(500).json(err);
 
       res.json({

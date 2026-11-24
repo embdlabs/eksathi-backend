@@ -163,8 +163,10 @@ const getQuestions = async (req, res) => {
     const userId = req.query.userId || null;
 
     // Step 1: Get question IDs based on filters
+    // Do not use SELECT DISTINCT q.id ... ORDER BY q.createdAt — MySQL rejects that
+    // (ER_FIELD_IN_ORDER_NOT_SELECT). ids are unique via PK.
     let questionIdsSql = `
-      SELECT DISTINCT q.id
+      SELECT q.id
       FROM questions q
       WHERE q.is_hidden = 0
     `;
@@ -189,7 +191,8 @@ const getQuestions = async (req, res) => {
     // Get count
     const countSql = `SELECT COUNT(*) as total FROM (${questionIdsSql}) as temp`;
 
-    // Add ORDER BY and LIMIT for pagination
+    // Newest = true chronological order so fresh profile activity (experience /
+    // research / awards / education) is not buried under older welcome/connection boosts.
     switch (sort) {
       case "newest":
         questionIdsSql += ` ORDER BY q.createdAt DESC`;
@@ -324,17 +327,80 @@ const getQuestions = async (req, res) => {
                       }
 
                       let tags = [];
+                      let activityMeta = null;
                       if (question.tags) {
                         if (Array.isArray(question.tags)) {
                           tags = question.tags;
                         } else if (typeof question.tags === "string") {
                           try {
-                            tags = JSON.parse(question.tags);
+                            const parsed = JSON.parse(question.tags);
+                            if (Array.isArray(parsed)) {
+                              tags = parsed;
+                            } else if (parsed && typeof parsed === "object") {
+                              // Wall posts store metadata object — expose as activityMeta
+                              if (
+                                parsed.wall ||
+                                parsed.achievement ||
+                                question.notification
+                              ) {
+                                activityMeta = parsed;
+                                tags = [];
+                              } else {
+                                tags = Object.keys(parsed).map((k) => ({
+                                  id: k,
+                                  name: String(parsed[k]),
+                                }));
+                              }
+                            }
                           } catch (e) {
                             console.warn("Error parsing tags:", e.message);
                           }
-                        } else if (typeof question.tags === "object") {
-                          tags = question.tags;
+                        } else if (
+                          typeof question.tags === "object" &&
+                          !Array.isArray(question.tags)
+                        ) {
+                          activityMeta = question.tags;
+                          tags = [];
+                        }
+                      }
+
+                      // Enrich connection posts so both names are linkable on the Wall
+                      if (
+                        String(question.notification || "") ===
+                          "connection_established" &&
+                        activityMeta
+                      ) {
+                        try {
+                          const otherId = activityMeta.otherUserId;
+                          if (otherId && !activityMeta.usernameB) {
+                            const other = await findUser(otherId);
+                            if (other) {
+                              activityMeta = {
+                                ...activityMeta,
+                                nameA:
+                                  activityMeta.nameA ||
+                                  author?.name ||
+                                  null,
+                                usernameA:
+                                  activityMeta.usernameA ||
+                                  author?.username ||
+                                  null,
+                                nameB: activityMeta.nameB || other.name || null,
+                                usernameB: other.username || String(otherId),
+                              };
+                            }
+                          } else if (!activityMeta.usernameA && author) {
+                            activityMeta = {
+                              ...activityMeta,
+                              nameA: activityMeta.nameA || author.name || null,
+                              usernameA: author.username || null,
+                            };
+                          }
+                        } catch (enrichErr) {
+                          console.log(
+                            "connection meta enrich:",
+                            enrichErr?.message || enrichErr
+                          );
                         }
                       }
 
@@ -348,6 +414,7 @@ const getQuestions = async (req, res) => {
                         user_id: question.user_id,
                         slug: question.slug,
                         tags: tags,
+                        activityMeta,
                         createdAt: question.createdAt,
                         category: question.category,
                         answer_count: question.answer_count || 0,
@@ -356,6 +423,7 @@ const getQuestions = async (req, res) => {
                         isPost: question.isPost || 0,
                         mediaUrl: question.mediaUrl,
                         brief: question.brief,
+                        notification: question.notification || null,
                         votes: voteCount || {
                           totalCount: 0,
                           upVoteCount: 0,
@@ -1181,6 +1249,8 @@ const getQuestionsByUserId = async (req, res) => {
 
 const postQuestion = async (req, res) => {
   let { userId, title, body, categoryId, tags,mediaUrl } = req.body;
+  // Broad topic default — category is optional on Ask Question
+  if (!categoryId) categoryId = 1;
 
   console.log("Question Req Body", req.body);
 
@@ -1765,17 +1835,20 @@ const getRecentQuestions = (req, res) => {
 
 const getFeaturedQuestions = (req, res) => {
   try {
-    const sortBy = req.query.sortBy || 'popular'; // Get the sort option from the query parameters
+    // Accept sortBy or legacy shortBy typo from FE
+    const sortBy = req.query.sortBy || req.query.shortBy || "latest";
 
+    // Align with Wall: like count = upvotes only; skip post_liked blurbs
+    // (those duplicate original posts with a different question id).
     let query = `
-      SELECT q.id, q.slug, q.title, q.user_id, c.name AS category,
+      SELECT q.id, q.slug, q.title, q.user_id, q.createdAt, c.name AS category,
       COUNT(DISTINCT a.id) AS answer_count,
-      COUNT(DISTINCT vq.id) AS question_vote_count,
+      COUNT(DISTINCT CASE WHEN vq.vote_type = 'upvote' THEN vq.id END) AS question_vote_count,
       COALESCE(SUM(av.vote_count), 0) AS answer_vote_count,
       COUNT(DISTINCT cm.id) AS comment_count,
       COUNT(DISTINCT rp.id) AS reply_count,
       (
-        10 * COUNT(DISTINCT vq.id) +
+        10 * COUNT(DISTINCT CASE WHEN vq.vote_type = 'upvote' THEN vq.id END) +
         5 * COUNT(DISTINCT a.id) +
         3 * COALESCE(SUM(av.vote_count), 0) +
         2 * COUNT(DISTINCT cm.id) +
@@ -1793,17 +1866,23 @@ const getFeaturedQuestions = (req, res) => {
       LEFT JOIN comments cm ON q.id = cm.question_id 
       LEFT JOIN replies rp ON cm.id = rp.comment_id 
       LEFT JOIN categories c ON q.category_id = c.id 
+      WHERE (q.is_hidden = 0 OR q.is_hidden IS NULL)
+        AND (q.notification IS NULL OR q.notification <> 'post_liked')
       `;
 
-    if (sortBy === 'popular') {
-      query += 'GROUP BY q.id ORDER BY score DESC';
-    } else if (sortBy === 'trending') {
-      query += 'GROUP BY q.id ORDER BY answer_count DESC, question_vote_count DESC, answer_vote_count DESC, comment_count DESC, reply_count DESC';
-    } else if (sortBy === 'featured') {
-      query += 'GROUP BY q.id ORDER BY RAND()';
+    if (sortBy === "popular") {
+      query += "GROUP BY q.id ORDER BY score DESC";
+    } else if (sortBy === "trending") {
+      query +=
+        "GROUP BY q.id ORDER BY answer_count DESC, question_vote_count DESC, answer_vote_count DESC, comment_count DESC, reply_count DESC";
+    } else if (sortBy === "featured") {
+      query += "GROUP BY q.id ORDER BY RAND()";
+    } else {
+      // latest (default for Home)
+      query += "GROUP BY q.id ORDER BY q.createdAt DESC";
     }
 
-    query += ' LIMIT 4'; // Add the LIMIT clause to limit the results to 5
+    query += " LIMIT 4";
 
     mysqlcon.query(query, async (err, results) => {
       if (err) {

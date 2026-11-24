@@ -103,11 +103,11 @@ module.exports = function (sequelize) {
       },
       qualification: {
         type: DataTypes.STRING(50),
-        defaultValue: "M.Sc in Math",
+        defaultValue: "",
       },
       experience: {
         type: DataTypes.INTEGER,
-        defaultValue: 2,
+        defaultValue: 0,
       },
       login_count: {
         type: DataTypes.INTEGER,
@@ -115,13 +115,19 @@ module.exports = function (sequelize) {
       },
       rating: {
         type: DataTypes.FLOAT,
-        defaultValue: 4.3,
+        defaultValue: 0,
       },
       nearestLocation: {
         type: DataTypes.STRING(100),
         allowNull: true,
       },
       is_verified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      // Separate from email OTP (users.status = active). Phone OTP not shipped yet.
+      phone_verified: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,

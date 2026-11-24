@@ -1,4 +1,5 @@
 const { mysqlcon } = require("../model/db");
+const { sendReportAck } = require("../utils/transactionalMails");
 
 
 const createReport = async (req, res) => {
@@ -15,10 +16,25 @@ const createReport = async (req, res) => {
         INSERT INTO reports (user_id, item_id, item_type, reason, comment)
         VALUES (?, ?, ?, ?, ?)
         `;
-        mysqlcon.query(sql, [user_id, item_id, item_type, reason, comment], (err, result) => {
+        mysqlcon.query(sql, [user_id, item_id, item_type, reason, comment], async (err, result) => {
             if (err) {
                 console.error('Error creating report:', err.stack);
                 return res.status(500).json({ message: 'Internal Server Error' });
+            }
+            try {
+                const [rows] = await mysqlcon.promise().query(
+                    `SELECT email, first_name, last_name FROM users WHERE id = ? LIMIT 1`,
+                    [user_id]
+                );
+                const u = rows[0];
+                if (u?.email) {
+                    sendReportAck({
+                        email: u.email,
+                        name: `${u.first_name || ""} ${u.last_name || ""}`.trim(),
+                    });
+                }
+            } catch (_) {
+                /* ack is best-effort */
             }
             res.status(201).json({ message: 'Report created successfully' });
         });

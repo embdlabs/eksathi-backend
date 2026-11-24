@@ -22,12 +22,23 @@ const postEventDetails = async (req, res) => {
     programs
   } = req.body;
 
+  const role = String(req.user?.role || "").toLowerCase();
+  // Institutes always post as themselves; staff may pass instituteId
+  const boundInstituteId =
+    role === "institute" ? req.user.id : instituteId;
+  if (!boundInstituteId) {
+    return res.status(400).json({
+      success: false,
+      message: "instituteId is required",
+    });
+  }
+
   try {
     // Start a transaction to ensure atomicity
     const result = await sequelize.transaction(async (transaction) => {
       // Insert the main event details
       const newEvent = await DBMODELS.events.create({
-        institute_id: instituteId,
+        institute_id: boundInstituteId,
         instituteName,
         title,
         description,

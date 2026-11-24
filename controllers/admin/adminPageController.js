@@ -7,20 +7,23 @@ const upload = require("../../utils/upload");
 const { imageReduce } = require("../../utils/upload");
 const getAdmin = (req, res) => {
   try {
-    mysqlcon.query(`SELECT * FROM admins`, (err, result) => {
+    mysqlcon.query(
+      `SELECT id, username, email, role, logo, privileges, createdAt, updatedAt FROM admins`,
+      (err, result) => {
         if (err) {
-            console.error(err);
-            return res.status(500).json({ message: "Internal Server Error" });
+          console.error(err);
+          return res.status(500).json({ message: "Internal Server Error" });
         }
         return res.status(200).json({
-            message: "Admin found",
-            result
+          message: "Admin found",
+          result,
         });
-    });
-} catch (error) {
-    console.error(err);
+      }
+    );
+  } catch (error) {
+    console.error(error);
     return res.status(409).json({ message: "Something went wrong" });
-}
+  }
 };
 
 const getAdminById = (req, res) => {
@@ -53,38 +56,31 @@ const getAdminById = (req, res) => {
   }
 };
 
-const createAdmin =async (req, res) => {
-  const {
-    username,
-    email,
-    role,
-  } = req.body;
-  // const logo = req.file
-  
-  if (
-    !username ||
-    // !logo ||
-    !email ||
-    !role
-  ) {
+const createAdmin = async (req, res) => {
+  const { username, email, role, password: plainPassword } = req.body;
+
+  if (!username || !email || !role || !plainPassword) {
     return res.status(400).json({ message: "Missing required fields" });
   }
-  // // Check if the email already exists
-  const [existingAdmin] = await mysqlcon.promise().query(`SELECT * FROM admins WHERE email = ?`, [email]);
+  if (String(plainPassword).length < 6) {
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 6 characters" });
+  }
+
+  const [existingAdmin] = await mysqlcon
+    .promise()
+    .query(`SELECT id FROM admins WHERE email = ?`, [email]);
   if (existingAdmin.length > 0) {
     return res.status(409).json({ message: "Email already exists" });
   }
-  //hash the password
-  const password =await hashingPassword(username)
-  // const { filename, path: filePath } = logo;
 
-   // Process the image with imageReducer
-  //  const reducedFilePath = await imageReduce("200",filePath);
+  const password = await hashingPassword(plainPassword);
   const newUser = {
     username,
     password,
     email,
-    role
+    role,
   };
   mysqlcon.query(`INSERT INTO admins SET ?`, newUser, (err, result) => {
     if (err) {

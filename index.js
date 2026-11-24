@@ -1,4 +1,13 @@
 require("dotenv").config();
+
+// Log fatal errors so VPS restarts leave a trail (OOM still kills silently via kernel)
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL uncaughtException]", err);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[FATAL unhandledRejection]", reason);
+});
+
 const { app, http, InitSocket } = require("./socket");
 const express = require("express");
 const passport = require("./passport");
@@ -33,6 +42,10 @@ const ejs = require("ejs");
 const sendEmailService = require("./utils/email");
 const { default: axios } = require("axios");
 require("./controllers/cron/cron");
+const {
+  ensureOffersTeachingColumn,
+} = require("./service/ratingRules.service");
+ensureOffersTeachingColumn();
 
 const endpoint =
   process.env.NODE_ENV === "production"

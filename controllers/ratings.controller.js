@@ -1,153 +1,192 @@
-const { log } = require("handlebars/runtime");
-const { mysqlcon } = require("../model/db");
 const { findUserRating } = require("../service/utilities.service");
-const { DBMODELS, sequelize } = require("../models/init-models");
-const { fn, col } = require("sequelize");
+const {
+  normalizeStarRating,
+  areUsersConnected,
+  loadUserProviderRow,
+  isRateableProvider,
+  getLatestPairRating,
+  cooldownRemainingDays,
+  RATING_COOLDOWN_DAYS,
+  queryAsync,
+} = require("../service/ratingRules.service");
+
+async function persistAverage(ratedUserId) {
+  try {
+    const newRating = await findUserRating(ratedUserId);
+    await queryAsync(`UPDATE user_profiles SET rating = ? WHERE user_id = ?`, [
+      newRating,
+      ratedUserId,
+    ]);
+    await queryAsync(`UPDATE users SET rating = ? WHERE id = ?`, [
+      newRating,
+      ratedUserId,
+    ]);
+  } catch (err) {
+    console.error("persistAverage:", err);
+  }
+}
+
+/**
+ * Shared save: connection + rateable provider + one row per pair + 3-month cooldown.
+ */
+async function saveGyaniRating({ raterId, rateeId, rating, answerMeta }) {
+  if (!raterId || !rateeId) {
+    return { status: 400, body: { error: "Missing rating fields." } };
+  }
+  if (String(raterId) === String(rateeId)) {
+    return { status: 400, body: { error: "You cannot rate yourself." } };
+  }
+
+  const stars = normalizeStarRating(rating);
+  if (stars == null) {
+    return {
+      status: 400,
+      body: { error: "Rating must be between 0.5 and 5 in half-star steps." },
+    };
+  }
+
+  const connected = await areUsersConnected(raterId, rateeId);
+  if (!connected) {
+    return {
+      status: 403,
+      body: { error: "You can only rate people you are connected with." },
+    };
+  }
+
+  const ratee = await loadUserProviderRow(rateeId);
+  if (!ratee || !isRateableProvider(ratee)) {
+    return {
+      status: 403,
+      body: {
+        error:
+          "This user is not available for rating yet. Providers need subjects (and teaching classes for tutors).",
+      },
+    };
+  }
+
+  const existing = await getLatestPairRating(raterId, rateeId);
+  if (existing) {
+    const remaining = cooldownRemainingDays(
+      existing.updatedAt || existing.createdAt
+    );
+    if (remaining > 0) {
+      return {
+        status: 429,
+        body: {
+          error: `You can update this rating in ${remaining} day${
+            remaining === 1 ? "" : "s"
+          }.`,
+          remainingDays: remaining,
+          cooldownDays: RATING_COOLDOWN_DAYS,
+        },
+      };
+    }
+    await queryAsync(
+      `UPDATE ratings
+       SET rating = ?, is_rated = 1, updatedAt = NOW()
+       WHERE id = ?`,
+      [stars, existing.id]
+    );
+  } else {
+    await queryAsync(
+      `INSERT INTO ratings (user_id, rated_user_id, rating, is_rated)
+       VALUES (?, ?, ?, 1)`,
+      [raterId, rateeId, stars]
+    );
+  }
+
+  if (answerMeta?.answerId && answerMeta?.questionId) {
+    await queryAsync(
+      `UPDATE answers SET is_rated = 1
+       WHERE id = ? AND question_id = ? AND user_id = ?`,
+      [answerMeta.answerId, answerMeta.questionId, rateeId]
+    );
+  }
+
+  await persistAverage(rateeId);
+  return { status: 200, body: { message: "Rating saved successfully." } };
+}
 
 const postUserRating = async (req, res) => {
-  const { questionId, answerId } = req.query;
-  const { rating } = req.body;
-  const userId = req.user.id; // Assuming the authenticated user's ID is available
+  try {
+    const { questionId, answerId } = req.query;
+    const { rating } = req.body;
+    const userId = req.user?.id;
 
-  // Check if the question author matches the authenticated user
-  const checkQuery = 'SELECT user_id FROM questions WHERE id = ?';
-  mysqlcon.query(checkQuery, [questionId], (err, results) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
+    if (!userId || !questionId || !answerId) {
+      return res.status(400).json({ error: "Missing rating fields." });
     }
 
-    if (results.length === 0 || results[0].user_id !== userId) {
-      return res.status(403).json({ error: 'You are not authorized to rate this answer.' });
-    }
-
-    // Get the answer author's ID
-    const answerAuthorQuery = 'SELECT user_id FROM answers WHERE id = ?';
-    mysqlcon.query(answerAuthorQuery, [answerId], (err, results) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ error: 'Internal server error' });
-      }
-
-      if (results.length === 0) {
-        return res.status(404).json({ error: 'Answer not found.' });
-      }
-
-      const answerAuthorId = results[0].user_id;
-
-      // Save the rating
-      const insertQuery = 'INSERT INTO ratings (user_id, rated_user_id, rating, is_rated) VALUES (?, ?, ?, 0)';
-      mysqlcon.query(insertQuery, [userId, answerAuthorId, rating], async (err) => {
-        if (err) {
-          console.error(err);
-          return res.status(500).json({ error: 'Internal server error' });
-        }
-        // Update the `is_rated` field in the `answers` table
-        const updateIsRatedQuery = 'UPDATE answers SET is_rated = 1 WHERE id = ? AND question_id = ? AND user_id = ?';
-        mysqlcon.query(updateIsRatedQuery, [answerId, questionId, answerAuthorId], (err) => {
-          if (err) {
-            console.error(err);
-            return res.status(500).json({ error: 'Internal server error' });
-          }
-
-          findUserRating(userId).then((newRating) => {
-            mysqlcon.query(`UPDATE user_profiles SET rating = ? WHERE user_id = ?`, [newRating, userId], (err) => {
-              if (err) {
-                console.error(err);
-              }
-            })
-          }).catch((err) => {
-            console.error(err);
-          });
-
-          res.status(200).json({ message: 'Rating saved successfully.' });
-        });
-      });
-    });
-  });
-}
-
-// Give Rating Direct to Gyani's by home page gyani's list
-const postRatingDirect = async (req, res) => {
-  const { rating, ratedUserId } = req.body;
-  const userId = req.query.userId;
-
-  // Update the existing rating's is_rated to 1 if it exists
-  const updateQuery = `
-    UPDATE ratings 
-    SET is_rated = 1 
-    WHERE user_id = ? AND rated_user_id = ?
-    `;
-
-  mysqlcon.query(updateQuery, [userId, ratedUserId], (err) => {
-    if (err) {
-      console.error(err);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-
-    const insertQuery = 'INSERT INTO ratings (user_id, rated_user_id, rating, is_rated) VALUES (?, ?, ?, 1)';
-    mysqlcon.query(insertQuery, [userId, ratedUserId, rating], async (err) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ error: 'Internal server error' });
-      }
-      // Update all entries in the answers table where user_id is equal to rated_user_id
-      const updateAnswersQuery = 'UPDATE answers SET is_rated = 1 WHERE user_id = ?';
-      mysqlcon.query(updateAnswersQuery, [ratedUserId], (err) => {
-        if (err) {
-          console.error(err);
-        }
-      });
-      findUserRating(userId).then((newRating) => {
-        mysqlcon.query(`UPDATE user_profiles SET rating = ? WHERE user_id = ?`, [newRating, userId], (err) => {
-          if (err) {
-            console.error(err);
-          }
-        })
-      }).catch((err) => {
-        console.error(err);
-      });
-
-      res.status(200).json({ message: 'Rating saved successfully.' });
-    });
-  });
-}
-
-// Utility function
-const performRatingUpdate = async () => {
-  const minRating = 0.5;
-  const maxRating = 5.0;
-  const step = 0.5;
-
-  const users = await DBMODELS.user_profiles.findAll({ attributes: ['user_id'] });
-
-  for (const user of users) {
-    // Generate a random rating between minRating and maxRating, rounded to nearest step
-    const randomSteps = Math.floor((maxRating - minRating) / step) + 1;
-    const randomStep = Math.floor(Math.random() * randomSteps);
-    const randomRating = minRating + randomStep * step;
-
-    await DBMODELS.user_profiles.update(
-      { rating: randomRating },
-      { where: { user_id: user.user_id } }
+    const qRows = await queryAsync(
+      `SELECT user_id FROM questions WHERE id = ? LIMIT 1`,
+      [questionId]
     );
+    if (!qRows.length || String(qRows[0].user_id) !== String(userId)) {
+      return res
+        .status(403)
+        .json({ error: "You are not authorized to rate this answer." });
+    }
+
+    const aRows = await queryAsync(
+      `SELECT user_id FROM answers WHERE id = ? LIMIT 1`,
+      [answerId]
+    );
+    if (!aRows.length) {
+      return res.status(404).json({ error: "Answer not found." });
+    }
+
+    const result = await saveGyaniRating({
+      raterId: userId,
+      rateeId: aRows[0].user_id,
+      rating,
+      answerMeta: { answerId, questionId },
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 };
 
-// Express route handler
-const updateRating = async (req, res) => {
+const postRatingDirect = async (req, res) => {
+  try {
+    const { rating, ratedUserId } = req.body;
+    // Identity from JWT only — ignore spoofable ?userId=
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const result = await saveGyaniRating({
+      raterId: userId,
+      rateeId: ratedUserId,
+      rating,
+    });
+    return res.status(result.status).json(result.body);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/** Disabled: previously overwrote profile ratings with random values. */
+const performRatingUpdate = async () => {
+  console.log(
+    "[ratings] Random profile rating cron is disabled — averages come from ratings table only."
+  );
+};
+
+const updateRating = async () => {
   try {
     await performRatingUpdate();
-    console.log("Ratings updated successfully.");
   } catch (err) {
     console.error(err);
   }
 };
 
-
-
 module.exports = {
   postUserRating,
   postRatingDirect,
   updateRating,
-}
+  saveGyaniRating,
+};

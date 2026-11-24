@@ -1,4 +1,7 @@
-const { routeVerifierJwt } = require("../../service/auth.service");
+const {
+  routeVerifierJwt,
+  authorizeRole,
+} = require("../../service/auth.service");
 const { upload } = require("../../utils/upload");
 const { postAnswer, getAnswers, updateAnswer } = require("./answers.controller");
 const InstitutesRouterV1 = require("express").Router();
@@ -89,7 +92,12 @@ InstitutesRouterV1.delete("/remove-api-key", routeVerifierJwt, removeAPIKey);
 InstitutesRouterV1.post("/onboarding", routeVerifierJwt, instituteOnboarding);
 
 //=========Admissions================================
-InstitutesRouterV1.post('/createadmission',createAdmissions)
+InstitutesRouterV1.post(
+  "/createadmission",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  createAdmissions
+);
 InstitutesRouterV1.get('/getadmission/:id',getAdmissions)
 InstitutesRouterV1.get('/getalladmission/',getAllAdmissions)
 
@@ -168,7 +176,12 @@ InstitutesRouterV1.get("/api/report", verifyAuth, getReports);
 InstitutesRouterV1.delete('/content/:type/:id', verifyAuth, deleteContent);
 
 //=======departments API======
-InstitutesRouterV1.post("/postdepartments", createDepartment);
+InstitutesRouterV1.post(
+  "/postdepartments",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  createDepartment
+);
 InstitutesRouterV1.get("/getdepartments/:id", getDepartments);
 InstitutesRouterV1.put("/updatedepartment/:id", Updatedepartments);
 InstitutesRouterV1.delete("/deletedepartment/:id", Deletedepartments);

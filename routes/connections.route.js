@@ -19,9 +19,14 @@ const {
     actionConnection, 
     getConnections,
     checkConnectionStatus,
-    handleConnectionRequest
+    handleConnectionRequest,
+    withdrawConnection,
+    hideConnection,
+    unhideConnection,
+    adminBlockConnectionUser,
+    adminUnblockConnectionUser,
 } = require('../controllers/connections.controller');
-const { routeVerifierJwt } = require('../service/auth.service');
+const { routeVerifierJwt, authorizeRole } = require('../service/auth.service');
 
 const ConnectionRouter = require('express').Router();
 
@@ -46,5 +51,26 @@ ConnectionRouter.get('/', getConnections);
 
 // Accept or reject a connection request (with question creation on accept)
 ConnectionRouter.put('/action/:connectionId', routeVerifierJwt, actionConnection);
+
+// Hide / unhide (privacy) — connection stays accepted
+ConnectionRouter.put('/:connectionId/hide', routeVerifierJwt, hideConnection);
+ConnectionRouter.put('/:connectionId/unhide', routeVerifierJwt, unhideConnection);
+
+// Admin: block connection requests to/from a user after abuse
+ConnectionRouter.post(
+  '/admin/block-user/:userId',
+  routeVerifierJwt,
+  authorizeRole(['admin', 'superadmin']),
+  adminBlockConnectionUser
+);
+ConnectionRouter.delete(
+  '/admin/block-user/:userId',
+  routeVerifierJwt,
+  authorizeRole(['admin', 'superadmin']),
+  adminUnblockConnectionUser
+);
+
+// Withdraw pending request or remove accepted connection
+ConnectionRouter.delete('/:connectionId', routeVerifierJwt, withdrawConnection);
 
 module.exports = ConnectionRouter;

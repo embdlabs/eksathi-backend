@@ -11,43 +11,95 @@ const job_applications = initJobApplications(sequelize);
 const { Op } = require("sequelize");
 const { cachedQuery } = require("../utils/db-cache-wrapper");
 
+const isStaffRole = (role) => ["admin", "superadmin"].includes(role);
+
+const isJobRowExpired = (job) => {
+  if (!job) return true;
+  const status = String(job.status || "").toLowerCase();
+  if (status && status !== "active") return true;
+  const raw = job.expiry_date || job.end_date || null;
+  if (!raw || raw === "0000-00-00 00:00:00") return false;
+  const ts = new Date(raw);
+  if (Number.isNaN(ts.getTime())) return false;
+  const end = new Date(ts);
+  end.setHours(23, 59, 59, 999);
+  return end.getTime() < Date.now();
+};
+
+/** Institute may only manage own jobs; admin/superadmin may manage any. */
+const assertCanManageJob = async (req, jobId) => {
+  const role = req.user?.role;
+  if (isStaffRole(role)) return { ok: true };
+  if (role !== "institute") {
+    return {
+      ok: false,
+      status: 403,
+      message: "Only institute or admin can manage jobs",
+    };
+  }
+  const [rows] = await mysqlcon.promise().query(
+    "SELECT id, institute_id, status, expiry_date FROM job_descriptions WHERE id = ? LIMIT 1",
+    [jobId]
+  );
+  if (!rows.length) {
+    return { ok: false, status: 404, message: "Job not found" };
+  }
+  if (String(rows[0].institute_id) !== String(req.user.id)) {
+    return {
+      ok: false,
+      status: 403,
+      message: "You can only manage your own institute jobs",
+    };
+  }
+  return { ok: true, job: rows[0] };
+};
+
 // GET all job descriptions by institute ID
 const getJobs = async (req, res) => {
   const instituteId = req.query.instituteId;
   try {
-    const query = `SELECT jd.*, i.name as institute_name , i.logo as institute_logo FROM job_descriptions  jd
-      LEFT JOIN institutes  i ON jd.institute_id = i.id
+    let query = `SELECT jd.*, i.name as institute_name , i.logo as institute_logo FROM job_descriptions  jd
+      LEFT JOIN institutes  i ON jd.institute_id = i.id`;
+    const params = [];
+    if (instituteId != null && instituteId !== "") {
+      query += ` WHERE jd.institute_id = ?`;
+      params.push(instituteId);
+    }
 
-     ${instituteId ? `WHERE institute_id=${instituteId}` : ""}`;
-    //  const query = `SELECT
-    //       jd.*,
-    //       i.name as institute_name
-    //     FROM job_descriptions jd
-    //     LEFT JOIN institutes i ON jd.institute_id = i.id
-    //     ${instituteId ? `WHERE jd.institute_id=${instituteId}` : ""}`;
-
-    mysqlcon.query(query, async (err, results) => {
+    mysqlcon.query(query, params, async (err, results) => {
       if (err) {
         console.error(err);
         return res.status(500).json({ message: "Internal Server Error" });
       }
 
-      const jobsWithApplications = await Promise.all(
-        results.map(async (job) => {
-          // job.employment_type = JSON.parse(job.employment_type);
-          // job.work_schedule = JSON.parse(job.work_schedule);
-          // job.subjects = JSON.parse(job.subjects);
-          // job.minimum_qualification = JSON.parse(job.minimum_qualification);
+      // Public list: hide expired unless institute dashboard (instituteId filter)
+      const list =
+        instituteId != null && instituteId !== ""
+          ? results
+          : results.filter((job) => !isJobRowExpired(job));
 
-          const totalApplications = await DBMODELS.job_applications.count({
-            where: {
-              job_id: job.id,
-            },
-          });
+      // Single grouped count query — avoid N+1 per job
+      let countMap = {};
+      if (list.length > 0) {
+        const ids = list.map((j) => j.id);
+        const placeholders = ids.map(() => "?").join(",");
+        const [countRows] = await mysqlcon.promise().query(
+          `SELECT job_id, COUNT(*) AS totalApplications
+           FROM job_applications
+           WHERE job_id IN (${placeholders})
+           GROUP BY job_id`,
+          ids
+        );
+        countMap = (countRows || []).reduce((acc, row) => {
+          acc[row.job_id] = Number(row.totalApplications) || 0;
+          return acc;
+        }, {});
+      }
 
-          return { ...job, totalApplications };
-        }),
-      );
+      const jobsWithApplications = list.map((job) => ({
+        ...job,
+        totalApplications: countMap[job.id] || 0,
+      }));
 
       return res
         .status(200)
@@ -68,23 +120,8 @@ const getActiveJobs = (req, res) => {
           console.log(err);
           return res.status(500).json({ message: "Internal Server Error" });
         }
-        // for (var i in results) {
-        //   results[i].employment_type = JSON.parse(results[i].employment_type);
-        //   results[i].work_schedule = JSON.parse(results[i].work_schedule);
-        //   results[i].subjects = JSON.parse(results[i].subjects);
-        //   results[i].minimum_qualification = JSON.parse(results[i].minimum_qualification);
-        //   let totalApplications = await DBMODELS.job_applications.count({
-        //     where: {
-        //       job_id: results[i].id
-        //     }
-        //   });
-        //   results[i] = { ...results[i], totalApplications }
-        // }
-        // const totalApplications = results.reduce((acc, cur) => {
-        //   return acc + cur.totalApplications;
-        // }, 0);
-        // console.log(results)
-        return res.status(200).json({ message: "Jobs Found", results });
+        const active = (results || []).filter((job) => !isJobRowExpired(job));
+        return res.status(200).json({ message: "Jobs Found", results: active });
       },
     );
   } catch (err) {
@@ -125,8 +162,18 @@ const getTotalJobs = async (req, res) => {
         },
       ],
     });
-    if (response.length > 0) {
-      return res.status(200).json({ message: "Jobs Found", results: response });
+    const now = Date.now();
+    const results = (response || []).filter((job) => {
+      const raw = job.expiry_date || job.end_date;
+      if (!raw || raw === "0000-00-00 00:00:00") return true;
+      const ts = new Date(raw);
+      if (Number.isNaN(ts.getTime())) return true;
+      const end = new Date(ts);
+      end.setHours(23, 59, 59, 999);
+      return end.getTime() >= now;
+    });
+    if (results.length > 0) {
+      return res.status(200).json({ message: "Jobs Found", results });
     } else {
       return res.status(200).json({ message: "No Jobs Found", results: [] });
     }
@@ -162,7 +209,7 @@ const getallJobs = async (req, res) => {
     //   }
     // );
 
-    let results = result.data;
+    let results = (result.data || []).filter((job) => !isJobRowExpired(job));
     return res.status(200).json({ message: "Jobs Found", results });
   } catch (err) {
     console.log(err);
@@ -498,7 +545,6 @@ const addJob = (req, res) => {
     vacancies,
     special_note,
     category_id,
-    role,
   } = req.body;
   const start_date = req.body.start_date;
   const expiry_date = req.body.end_date;
@@ -506,14 +552,19 @@ const addJob = (req, res) => {
   const email = req.body.email;
   const phone = req.body.phone;
 
-  console.log("req.body is ", req.body);
-
-  // Check if the user has the role of "institute", "admin", or "superadmin"
+  // Role from JWT only — ignore spoofable body.role
+  const role = req.user?.role;
   if (!["institute", "admin", "superadmin"].includes(role)) {
     return res.status(403).json({
       message:
         'Only users with the role of "institute", "admin", "superadmin" can post a new job',
     });
+  }
+  // Institutes always post as themselves; staff may pass institute_id
+  const boundInstituteId =
+    role === "institute" ? req.user.id : institute_id;
+  if (boundInstituteId == null || boundInstituteId === "") {
+    return res.status(400).json({ message: "institute_id is required" });
   }
 
   let slug =
@@ -528,7 +579,7 @@ const addJob = (req, res) => {
     const instituteQuery =
       "SELECT email, username, name FROM institutes WHERE id = ?";
 
-    mysqlcon.query(instituteQuery, [institute_id], (err, instituteResults) => {
+    mysqlcon.query(instituteQuery, [boundInstituteId], (err, instituteResults) => {
       if (err) {
         console.log("Error fetching institute details:", err);
         return res.status(500).json({ message: "Internal Server Error" });
@@ -546,7 +597,7 @@ const addJob = (req, res) => {
 
       const jobValues = [
         slug,
-        institute_id,
+        boundInstituteId,
         name,
         email,
         phone,
@@ -662,7 +713,7 @@ const addJob = (req, res) => {
 };
 
 // PUT (update) a job description by ID
-const updateJob = (req, res) => {
+const updateJob = async (req, res) => {
   const jobId = req.params.id;
   const {
     name,
@@ -682,23 +733,29 @@ const updateJob = (req, res) => {
     vacancies,
     special_note,
   } = req.body;
-  const userRole = req.user.role;
   const start_date = req.body.start_date;
   const end_date = req.body.end_date;
-  // Check if the user has the role of "institute"
-  // Replace this with your authentication logic
-  // if (userRole !== 'institute') {
-  //   return res.status(403).json({ message: 'Only users with the role of "institute" can post a new job' });
-  // }
 
   try {
+    const gate = await assertCanManageJob(req, jobId);
+    if (!gate.ok) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+    // Institutes cannot reassign ownership
+    const nextInstituteId =
+      req.user?.role === "institute"
+        ? req.user.id
+        : institute_id != null
+          ? institute_id
+          : gate.job?.institute_id;
+
     const query =
       "UPDATE job_descriptions SET name = ?, email = ?, phone = ?, institute_id = ?, job_title = ?, job_description = ?, employment_type = ?, work_schedule = ?, salary_range = ?, subjects = ?, minimum_qualification = ?, experience = ?, job_location = ?, designation = ?, vacancies = ?, special_note = ? ,createdAt = ?,expiry_date=? WHERE id = ?";
     const values = [
       name,
       email,
       phone,
-      institute_id,
+      nextInstituteId,
       job_title,
       job_description,
       JSON.stringify(employment_type),
@@ -716,7 +773,7 @@ const updateJob = (req, res) => {
       jobId,
     ];
 
-    mysqlcon.query(query, values, (err, results) => {
+    mysqlcon.query(query, values, (err) => {
       if (err) {
         console.log(err);
         return res.status(500).json({ message: "Internal Server Error" });
@@ -732,20 +789,18 @@ const updateJob = (req, res) => {
 };
 
 // DELETE a job description by ID
-const deleteJob = (req, res) => {
+const deleteJob = async (req, res) => {
   const jobId = req.params.id;
-  const userRole = req.user.role;
-  // Check if the user has the role of "institute"
-  // Replace this with your authentication logic
-  // if (userRole !== 'institute') {
-  //   return res.status(403).json({ message: 'Only users with the role of "institute" can post a new job' });
-  // };
 
   try {
+    const gate = await assertCanManageJob(req, jobId);
+    if (!gate.ok) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
     mysqlcon.query(
       "DELETE FROM job_descriptions WHERE id = ?",
       [jobId],
-      (err, results) => {
+      (err) => {
         if (err) {
           console.log(err);
           return res.status(500).json({ message: "Internal Server Error" });
@@ -953,7 +1008,9 @@ const getJobDescriptionsByCategory = (req, res) => {
 
 const getAllJobApplications = async (req, res) => {
   try {
-    //
+    if (!isStaffRole(req.user?.role)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     const jobApplication = await DBMODELS.job_applications.findAll({
       attributes: ["id", "status", "createdAt"],
       include: [
@@ -990,6 +1047,10 @@ const getAllJobApplications = async (req, res) => {
 const getAllJobApplicationsByJobDescriptions = async (req, res) => {
   const jobDescriptionId = req.params.jobDescriptionId;
   try {
+    const gate = await assertCanManageJob(req, jobDescriptionId);
+    if (!gate.ok) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
     const jobApplications = await DBMODELS.job_applications.findAll({
       where: { job_id: jobDescriptionId },
       include: [
@@ -1025,6 +1086,12 @@ const getAllJobApplicationsByJobDescriptions = async (req, res) => {
 const getAllJobApplicationsByApplicantId = async (req, res) => {
   const applicantId = req.params.applicantId;
   try {
+    if (
+      !isStaffRole(req.user?.role) &&
+      String(applicantId) !== String(req.user?.id)
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     const jobApplications = await DBMODELS.job_applications.findAll({
       where: { user_id: applicantId, is_applied: true },
       include: [
@@ -1052,6 +1119,15 @@ const getAllJobApplicationsByApplicantId = async (req, res) => {
 const getAllJobApplicationsByInstitute = async (req, res) => {
   const instituteId = req.params.instituteId;
   try {
+    if (
+      !isStaffRole(req.user?.role) &&
+      !(
+        req.user?.role === "institute" &&
+        String(instituteId) === String(req.user?.id)
+      )
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     // Step 1: Get total job descriptions by institute_id
     const totalJobDescriptions = await DBMODELS.job_descriptions.count({
       where: { institute_id: instituteId },
@@ -1150,6 +1226,15 @@ const getJobApplication = async (req, res) => {
       return res.status(404).json({ message: "Job application not found" });
     }
 
+    const isApplicant =
+      String(jobApplication.user_id) === String(req.user?.id);
+    if (!isStaffRole(req.user?.role) && !isApplicant) {
+      const gate = await assertCanManageJob(req, jobApplication.job_id);
+      if (!gate.ok) {
+        return res.status(gate.status).json({ message: gate.message });
+      }
+    }
+
     return res.status(200).json(jobApplication);
   } catch (error) {
     console.error(error);
@@ -1159,13 +1244,76 @@ const getJobApplication = async (req, res) => {
 
 const createApplication = async (req, res) => {
   try {
-    // Validate the request body
-    const { user_id, job_id, cover_letter } = req.body;
+    // Applicant identity from JWT only — ignore spoofable body.user_id
+    const user_id = req.user?.id;
+    const { job_id, cover_letter } = req.body;
     if (!user_id || !job_id || !cover_letter) {
       return res.status(400).json({
-        message: "Missing required fields: user_id, job_id, cover_letter",
+        message: "Missing required fields: job_id, cover_letter (auth required)",
       });
     }
+
+    // MVP: pure students cannot apply; dual (offers_teaching) same as teacher/pro
+    // Block under-18 (fail closed on gate errors)
+    try {
+      const applicant = await DBMODELS.users.findByPk(user_id, {
+        attributes: ["id", "role"],
+      });
+      if (!applicant) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const profile = await DBMODELS.user_profiles.findOne({
+        where: { user_id },
+        attributes: ["dob", "offers_teaching"],
+      });
+      if (applicant.role === "student") {
+        const dual =
+          profile?.offers_teaching === true ||
+          profile?.offers_teaching === 1 ||
+          profile?.offers_teaching === "1";
+        if (!dual) {
+          return res.status(403).json({
+            message:
+              "Students cannot apply for jobs. Use Wall, tutors, and institutes instead.",
+          });
+        }
+      }
+      if (profile?.dob) {
+        const d = new Date(profile.dob);
+        if (!Number.isNaN(d.getTime())) {
+          const today = new Date();
+          let age = today.getFullYear() - d.getFullYear();
+          const m = today.getMonth() - d.getMonth();
+          if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age -= 1;
+          if (age < 18) {
+            return res.status(403).json({
+              message: "You must be 18 or older to apply for jobs.",
+            });
+          }
+        }
+      }
+    } catch (gateErr) {
+      console.error("Job apply role/age gate:", gateErr);
+      return res.status(503).json({
+        message: "Unable to verify eligibility to apply. Please try again.",
+      });
+    }
+
+    // Reject missing / inactive / expired jobs
+    const [jobRows] = await mysqlcon.promise().query(
+      `SELECT id, status, expiry_date FROM job_descriptions WHERE id = ? LIMIT 1`,
+      [job_id]
+    );
+    const jobRow = jobRows[0];
+    if (!jobRow) {
+      return res.status(404).json({ message: "Job not found" });
+    }
+    if (isJobRowExpired(jobRow)) {
+      return res.status(403).json({
+        message: "This job is no longer accepting applications.",
+      });
+    }
+
     // Check if the application already exists
     const existingApplication = await DBMODELS.job_applications.findOne({
       where: { user_id, job_id },
@@ -1180,6 +1328,28 @@ const createApplication = async (req, res) => {
         existingApplication.is_applied = true;
         existingApplication.cover_letter = cover_letter;
         await existingApplication.save();
+        try {
+          const { sendJobApplicationAck } = require("../utils/transactionalMails");
+          const [users] = await mysqlcon.promise().query(
+            `SELECT email, first_name, last_name FROM users WHERE id = ? LIMIT 1`,
+            [user_id]
+          );
+          const [jobs] = await mysqlcon.promise().query(
+            `SELECT job_title, designation FROM job_descriptions WHERE id = ? LIMIT 1`,
+            [job_id]
+          );
+          const u = users[0];
+          const j = jobs[0];
+          if (u?.email) {
+            sendJobApplicationAck({
+              email: u.email,
+              name: `${u.first_name || ""} ${u.last_name || ""}`.trim(),
+              jobTitle: j?.job_title || j?.designation || "the role",
+            });
+          }
+        } catch (_) {
+          /* non-blocking */
+        }
         return res.status(200).json({
           message: "Job application updated to applied.",
           application: existingApplication,
@@ -1195,6 +1365,30 @@ const createApplication = async (req, res) => {
       is_applied: true,
     });
 
+    // Best-effort application ack email to candidate
+    try {
+      const { sendJobApplicationAck } = require("../utils/transactionalMails");
+      const [users] = await mysqlcon.promise().query(
+        `SELECT email, first_name, last_name FROM users WHERE id = ? LIMIT 1`,
+        [user_id]
+      );
+      const [jobs] = await mysqlcon.promise().query(
+        `SELECT job_title, designation FROM job_descriptions WHERE id = ? LIMIT 1`,
+        [job_id]
+      );
+      const u = users[0];
+      const j = jobs[0];
+      if (u?.email) {
+        sendJobApplicationAck({
+          email: u.email,
+          name: `${u.first_name || ""} ${u.last_name || ""}`.trim(),
+          jobTitle: j?.job_title || j?.designation || "the role",
+        });
+      }
+    } catch (_) {
+      /* non-blocking */
+    }
+
     // Respond with the created application
     return res.status(201).json(newJobApplication);
   } catch (error) {
@@ -1205,11 +1399,12 @@ const createApplication = async (req, res) => {
 
 const addToWishlist = async (req, res) => {
   try {
-    // Validate the request body
-    const { user_id, job_id } = req.body;
+    // Identity from JWT only
+    const user_id = req.user?.id;
+    const { job_id } = req.body;
     if (!user_id || !job_id) {
       return res.status(400).json({
-        message: "Missing required fields: user_id, job_id",
+        message: "Missing required fields: job_id (auth required)",
       });
     }
 
@@ -1253,16 +1448,20 @@ const addToWishlist = async (req, res) => {
 
 const removeWishList = async (req, res) => {
   try {
-    // Validate the request body
-    const { userId, jobId } = req.params;
-    console.log("user Id :", userId);
-    console.log("job Id :", jobId);
-    const user_id = userId;
+    const { jobId } = req.params;
+    const user_id = req.user?.id;
     const job_id = jobId;
     if (!user_id || !job_id) {
       return res.status(400).json({
-        message: "Missing required fields: user_id, job_id",
+        message: "Missing required fields: jobId (auth required)",
       });
+    }
+    // Path userId (if present) must match JWT
+    if (
+      req.params.userId != null &&
+      String(req.params.userId) !== String(user_id)
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
     }
     // Check if the application already exists
     const existingApplication = await DBMODELS.job_applications.findOne({
@@ -1317,6 +1516,14 @@ const updateApplicationStatus = async (req, res) => {
 
     if (!application) {
       return res.status(404).json({ message: "Application not found" });
+    }
+
+    // Only owning institute (or staff) may change status
+    if (!isStaffRole(req.user?.role)) {
+      const gate = await assertCanManageJob(req, application.job_id);
+      if (!gate.ok) {
+        return res.status(gate.status).json({ message: gate.message });
+      }
     }
 
     const validStatuses = [
@@ -1452,6 +1659,12 @@ const getAppliedJobs = async (req, res) => {
   const { userId, jobId } = req.params;
 
   try {
+    if (
+      !isStaffRole(req.user?.role) &&
+      String(userId) !== String(req.user?.id)
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     // Fetch the job application status
     const application = await job_applications.findOne({
       where: {
@@ -1483,6 +1696,12 @@ const getWishlistsJobs = async (req, res) => {
   const { userId } = req.params;
 
   try {
+    if (
+      !isStaffRole(req.user?.role) &&
+      String(userId) !== String(req.user?.id)
+    ) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     // Check if userId is a valid number
     if (isNaN(userId)) {
       return res.status(400).json({
@@ -1551,23 +1770,24 @@ const updateJobStatus = async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  console.log("Job ID:", id);
-  console.log("New Status:", status);
-  const resp = await DBMODELS.job_descriptions.update(
-    { status: status },
-    {
-      where: {
-        id: id,
-      },
-    },
-  );
-  console.log("Response:", resp);
-  if (resp[0] === 1) {
-    return res
-      .status(200)
-      .json({ status: true, message: "Job status updated successfully!!" });
-  } else {
+  try {
+    const gate = await assertCanManageJob(req, id);
+    if (!gate.ok) {
+      return res.status(gate.status).json({ message: gate.message });
+    }
+    const resp = await DBMODELS.job_descriptions.update(
+      { status: status },
+      { where: { id: id } }
+    );
+    if (resp[0] === 1) {
+      return res
+        .status(200)
+        .json({ status: true, message: "Job status updated successfully!!" });
+    }
     return res.status(404).json({ status: false, message: "Job not updated!" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 

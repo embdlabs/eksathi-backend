@@ -510,6 +510,21 @@ const signup = async (req, res) => {
         .status(400)
         .json({ message: "Name,Contact, Email or Password is missing" });
     }
+    if (String(password).length < 8) {
+      return res
+        .status(400)
+        .json({ message: "Password must be at least 8 characters" });
+    }
+
+    const capitalizeNamePart = (value) => {
+      if (value == null) return value;
+      const s = String(value).trim();
+      if (!s) return s;
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    };
+    first_name = capitalizeNamePart(first_name);
+    last_name = capitalizeNamePart(last_name);
+    middle_name = capitalizeNamePart(middle_name);
 
     email = normalizeSignupEmail(email);
     contact = normalizeSignupPhone(contact);
@@ -524,6 +539,15 @@ const signup = async (req, res) => {
     const username = createUsernameForUser();
     let hashpassword = await hashingPassword(password);
 
+    // users.location is varchar(200); user_profiles.location is varchar(50).
+    // Pass object for users (Sequelize JSON → one stringify). Keep profile as short text.
+    const locationShort = (() => {
+      if (!address) return null;
+      if (typeof address === "string") return address.slice(0, 50);
+      const parts = [address.city, address.state, address.country].filter(Boolean);
+      return (parts.join(", ") || String(address.country || "")).slice(0, 50) || null;
+    })();
+
     const userData = {
       username: username,
       password: hashpassword,
@@ -534,8 +558,13 @@ const signup = async (req, res) => {
       phone: contact,
       role: profession,
       display_name: displayName,
-      location: address,
+      location: typeof address === "object" && address ? address : address || null,
       bio: bio,
+      // Do not invent credentials — Profile owns qualification / experience / fee
+      qualification: "",
+      experience: 0,
+      rating: 0,
+      phone_verified: false,
     };
 
     if (subject && (Array.isArray(subject) ? subject.length : subject)) {
@@ -577,7 +606,7 @@ const signup = async (req, res) => {
       middle_name: middle_name,
       last_name: last_name,
       profession: profession,
-      location: address,
+      location: locationShort,
       bio: bio,
     };
 
@@ -602,10 +631,10 @@ const signup = async (req, res) => {
     // console.log("Location is created successfully", locationCreate);
 
     // CREATE QUESTION RECORD AFTER SUCCESSFUL REGISTRATION
-    const questionTitle = `Welcome ${first_name} ${last_name} - New User Introduction`;
+    const questionTitle = `Welcome ${first_name} ${last_name} to EkSathi!`;
     const questionSlug = `welcome-${username.toLowerCase().replace(/[^a-zA-Z0-9]/g, '-')}-${Date.now()}`;
-    const questionBody = `Hello! I am ${first_name} ${last_name}, a new member joining the community. I'm excited to connect with everyone!`;
-    const questionBrief = `Introduction post for new user ${first_name} ${last_name} who just registered as a ${profession}.`;
+    const questionBody = `${first_name} ${last_name} just joined the community. Say hello and view their profile.`;
+    const questionBrief = `${first_name} ${last_name} joined EkSathi. View profile to connect.`;
     
     // Prepare tags for the question
     const questionTags = {
@@ -724,7 +753,8 @@ const signup = async (req, res) => {
 
   try {
     mysqlcon.query(
-      `SELECT id, email FROM users WHERE email='${email}' OR phone=${contact}`,
+      `SELECT id, email FROM users WHERE email = ? OR phone = ?`,
+      [email, contact],
       async (err, result) => {
         if (err) {
           console.log(err);
@@ -1289,16 +1319,25 @@ const signin = async (req, res) => {
   }
   
   try {
+    let loginSql =
+      "SELECT id, avatar_url as profile, first_name, last_name, email, phone, password, role, status, login_count,location FROM users WHERE ";
+    let loginParam;
+    if (username) {
+      loginSql += "username = ?";
+      loginParam = username;
+    } else if (email) {
+      loginSql += "email = ?";
+      loginParam = email;
+    } else if (phone) {
+      loginSql += "phone = ?";
+      loginParam = phone;
+    } else {
+      return res.status(400).json({ message: "Something went wrong" });
+    }
+
     mysqlcon.query(
-      `SELECT id, avatar_url as profile, first_name, last_name, email, phone, password, role, status, login_count,location FROM users WHERE ${
-        username
-          ? `username='${username}'`
-          : email
-          ? `email='${email}'`
-          : phone
-          ? `phone=${phone}`
-          : ""
-      }`,
+      loginSql,
+      [loginParam],
       async function (err, result) {
       
         if (err) {
@@ -1371,6 +1410,33 @@ const signin = async (req, res) => {
             const { id, first_name, email, role } = result[0];
             const user = result[0];
             delete user.password;
+
+            // Dual-role flag lives on user_profiles — attach for FE Careers gates
+            try {
+              const [profRows] = await mysqlcon.promise().query(
+                `SELECT offers_teaching, dob FROM user_profiles WHERE user_id = ? LIMIT 1`,
+                [id]
+              );
+              if (profRows?.[0]) {
+                user.offers_teaching = Boolean(
+                  profRows[0].offers_teaching === 1 ||
+                    profRows[0].offers_teaching === true ||
+                    profRows[0].offers_teaching === "1"
+                );
+                user.dob = profRows[0].dob || user.dob;
+                user.profile = {
+                  ...(typeof user.profile === "object" && user.profile
+                    ? user.profile
+                    : {}),
+                  offers_teaching: user.offers_teaching,
+                  dob: user.dob,
+                };
+              } else {
+                user.offers_teaching = false;
+              }
+            } catch (_) {
+              user.offers_teaching = false;
+            }
             
             // Update user activities
             updateUserActivities(result[0].id, "login", (err, activity) => {
@@ -1378,6 +1444,14 @@ const signin = async (req, res) => {
                 console.log(err);
               }
             });
+
+            // Birthday Wall post (once/day) — privacy-safe celebration
+            try {
+              const {
+                maybeAnnounceBirthday,
+              } = require("../service/wallActivity.service");
+              maybeAnnounceBirthday(result[0].id).catch(() => {});
+            } catch (_) { /* ignore */ }
             
             // Increment login_count
             const currentLoginCount = result[0].login_count || 0;
@@ -1419,8 +1493,6 @@ const signin = async (req, res) => {
 const jwtLogin = async (req, res) => {
   const { token } = req.query;
 
-  console.log("Token received: ", token);
-
   if (!token) {
     return res.status(400).json({ message: "Token is missing" });
   }
@@ -1430,8 +1502,6 @@ const jwtLogin = async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const { id, email, role, clientotp } = decoded.data;
-
-    console.log(decoded.data);
     // Ensure the user exists and is active
     mysqlcon.query(
       "SELECT * FROM users WHERE id = ? AND email = ?",
@@ -1508,7 +1578,7 @@ const forgetPassword = (req, res) => {
         mailConfig,
         replacements,
         "RESET_PASSWORD",
-        "noreplay@eksathi.com"
+        "noreply@eksathi.com"
       );
       console.log(`Successfully sent password reset link on ${email}`);
       return res.status(200).json({
@@ -1521,7 +1591,6 @@ const forgetPassword = (req, res) => {
 // New password input from user
 const resetPassword = (req, res) => {
   const { token } = req.query;
-  console.log("token is ",token)
   try {
     // Verify the token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -1546,9 +1615,7 @@ const resetPassword = (req, res) => {
 // Update password and send success message
 const updatePassword = (req, res) => {
   const { token, password } = req.body;
-  console.log("req.body users",req.body)
   if (!token) {
-    console.log("Invalid token : ", req.body);
     return res.status(403).json({
       message: "Invalid request, Please send new reset request again",
     });
@@ -1696,8 +1763,25 @@ const verifyOTP = async (req, res) => {
       );
       await sendWelcomeMail(UserDetails.email,UserDetails.username,UserDetails.role,`https://www.eksathi.com/${UserDetails.username}`,UserDetails.first_name,UserDetails.last_name)
       await DBMODELS.otp.destroy({ where: { code: code } });
+
+      // Auto-login payload so frontend can continue registration (not bounce to login)
+      const freshUser = await DBMODELS.users.findOne({
+        where: { id: userId },
+        raw: true,
+      });
+      if (freshUser) {
+        delete freshUser.password;
+      }
+      const jwtToken = await createJWT({
+        id: freshUser.id,
+        email: freshUser.email,
+        role: freshUser.role,
+      });
+
       return res.status(200).json({
         message: "OTP code verified successfully",
+        user: freshUser,
+        jwt: jwtToken,
         results: {},
       });
     } else {
@@ -1791,17 +1875,41 @@ const verifyInstituteOTP = async (req, res) => {
             mysqlcon.query(
               "DELETE FROM institute_otp WHERE id =?",
               [result[0].id],
-              (err, deleteRes) => {
+              async (err, deleteRes) => {
                 if (err) {
                   console.log(err);
                   return res
                     .status(500)
                     .json({ message: "Internal Server Error" });
                 }
-                return res.status(200).json({
-                  message: "OTP code verified successfully",
-                  results: deleteRes,
-                });
+                try {
+                  const [instRows] = await mysqlcon.promise().query(
+                    `SELECT id, name, email, mobile, username, status
+                     FROM institutes WHERE id = ? LIMIT 1`,
+                    [userId]
+                  );
+                  const institute = instRows[0] || { id: userId };
+                  const jwt = await createJWT({
+                    id: institute.id,
+                    email: institute.email,
+                    role: "institute",
+                  });
+                  return res.status(200).json({
+                    message: "OTP code verified successfully",
+                    results: deleteRes,
+                    user: {
+                      ...institute,
+                      role: "institute",
+                    },
+                    jwt,
+                  });
+                } catch (tokenErr) {
+                  console.error("Institute OTP JWT:", tokenErr);
+                  return res.status(200).json({
+                    message: "OTP code verified successfully",
+                    results: deleteRes,
+                  });
+                }
               }
             );
           }
@@ -1891,13 +1999,21 @@ const changePassword = (req, res) => {
   const newPassword = req.body.newpassword;
   const isInstitute = req.body.isInstitute;
 
-  console.log("Change password: ", req.body);
-
   // check if old password and new password are available
   if (!oldPassword || !newPassword) {
     return res
       .status(403)
       .json({ message: "Password and new password are not available" });
+  }
+
+  // Bind password change to JWT user when available
+  const authId = req.user?.id;
+  const effectiveUserId = authId || userId;
+  if (!effectiveUserId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  if (authId && userId != null && String(userId) !== String(authId)) {
+    return res.status(403).json({ message: "Forbidden" });
   }
 
   // query the database for the user's current password
@@ -1909,7 +2025,7 @@ const changePassword = (req, res) => {
   }
   mysqlcon.query(
     sql,
-    [userId],
+    [effectiveUserId],
     async (error, results, fields) => {
       if (error) {
         res
@@ -1920,7 +2036,6 @@ const changePassword = (req, res) => {
 
       // check if the old password matches the current password
       const currentPassword = results[0].password;
-      console.log("Current password : ", currentPassword);
 
       let confirmedPass = await checkHashedPass(oldPassword, currentPassword);
       if (!confirmedPass) {
@@ -1941,7 +2056,7 @@ const changePassword = (req, res) => {
 
       mysqlcon.query(
         updateSql,
-        [hashpassword, userId],
+        [hashpassword, effectiveUserId],
         (error, results, fields) => {
           if (error) {
             res.status(500).json({

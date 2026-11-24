@@ -2,21 +2,30 @@ const { mysqlcon } = require("../model/db");
 
 const getNotifications = (req, res) => {
   const userId = req?.user?.id;
-  const { role } = req.query;
+  // Prefer JWT role — query `role=user` was hitting institute column and returning empty
+  const role = (req.query.role || req.user?.role || "").toLowerCase();
+  const isMemberRole =
+    role === "student" || role === "teacher" || role === "professional";
 
   // Determine the correct receiver column based on the user's role
-  const receiverColumn =
-    role === "student" || role === "teacher" || role === "professional"
+  const receiverColumn = isMemberRole
       ? "n.receiver_user_id"
       : "n.receiver_institute_id";
 
   try {
     // Main query with table alias 'n'
     const query = `
-        SELECT n.*, u.avatar_url, u.first_name, u.last_name, q.slug, i.name as institute_name
+        SELECT n.*,
+               COALESCE(NULLIF(u.avatar_url, ''), up.profile_pic) AS avatar_url,
+               COALESCE(NULLIF(u.avatar_url, ''), up.profile_pic) AS sender_profile_pic,
+               u.first_name, u.last_name, u.username,
+               u.id AS sender_user_id_resolved,
+               q.slug, i.name as institute_name
         FROM notifications n
         LEFT JOIN users u 
           ON n.sender_user_id = u.id
+        LEFT JOIN user_profiles up
+          ON u.id = up.user_id
         LEFT JOIN institutes i
           ON n.sender_institute_id = i.id
         LEFT JOIN questions q 
@@ -34,8 +43,7 @@ const getNotifications = (req, res) => {
       }
 
       // Determine the receiver column without alias for the COUNT query
-      const simpleReceiverColumn =
-        role === "student" || role === "teacher" || role === "professional"
+      const simpleReceiverColumn = isMemberRole
           ? "receiver_user_id"
           : "receiver_institute_id";
 
@@ -181,27 +189,32 @@ const getNotifications = (req, res) => {
 
 // In your notification controller, update markRead function
 const markRead = (req, res) => {
-  const { notificationId, userId, role } = req.body; // Add userId and role to request
+  const { notificationId } = req.body;
+  const userId = req.user?.id;
+  const role = (req.user?.role || "").toLowerCase();
+  if (!userId || !notificationId) {
+    return res.status(400).json({ message: "Unauthorized or missing notificationId" });
+  }
   try {
-    // First, update the notification as read
+    const isMemberRole =
+      role === "student" || role === "teacher" || role === "professional";
+    const receiverColumn = isMemberRole
+      ? "receiver_user_id"
+      : "receiver_institute_id";
+
+    // Only mark as read if this notification belongs to the JWT user
     const updateQuery = `
         UPDATE notifications
         SET is_read = 1
-        WHERE id = ?
+        WHERE id = ? AND ${receiverColumn} = ?
       `;
-    const updateValues = [notificationId];
+    const updateValues = [notificationId, userId];
 
     mysqlcon.query(updateQuery, updateValues, (err, result) => {
       if (err) {
         console.log(err);
         return res?.status(500).json({ message: "Internal Server Error" });
       }
-
-      // Then get the new unread count
-      const receiverColumn =
-        role === "student" || role === "teacher" || role === "professional"
-          ? "receiver_user_id"
-          : "receiver_institute_id";
 
       const countQuery = `
         SELECT COUNT(*) AS count
@@ -229,16 +242,21 @@ const markRead = (req, res) => {
 };
 
 const getAllNotification = async (req, res) => {
+  const authId = req.user?.id;
   const { userId } = req.params;
   const { type } = req.query;
 
-  // console.log("UserId : ------------------------ ,", userId);
-  // console.log("Type : ------------------------ ,", type);
+  if (!authId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  if (userId != null && String(userId) !== String(authId)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   try {
     // Build the base query
     let query = `SELECT * FROM notifications WHERE receiver_institute_id = ?`;
-    const queryParams = [userId];
+    const queryParams = [authId];
 
     // Add type filter if provided
     if (type) {
@@ -297,11 +315,59 @@ const getAllNotification = async (req, res) => {
 //   }
 // };
 
+const clearAllNotifications = (req, res) => {
+  // Always bind to JWT identity — ignore client-supplied userId
+  const userId = req.user?.id;
+  const role = (req.user?.role || "").toLowerCase();
+  if (!userId || !role) {
+    return res.status(400).json({
+      message: "User ID and role are required",
+      success: false,
+    });
+  }
+
+  try {
+    const isMemberRole =
+      role === "student" || role === "teacher" || role === "professional";
+    const receiverColumn = isMemberRole
+      ? "receiver_user_id"
+      : "receiver_institute_id";
+
+    mysqlcon.query(
+      `DELETE FROM notifications WHERE ${receiverColumn} = ?`,
+      [userId],
+      (err, result) => {
+        if (err) {
+          console.log(err);
+          return res.status(500).json({
+            message: "Internal Server Error",
+            success: false,
+          });
+        }
+        return res.status(200).json({
+          message:
+            result.affectedRows > 0
+              ? "All notifications cleared"
+              : "No notifications to clear",
+          success: true,
+          clearedCount: result.affectedRows || 0,
+          unreadCount: 0,
+        });
+      }
+    );
+  } catch (error) {
+    console.error("Error clearing notifications:", error);
+    return res.status(500).json({
+      message: "Internal Server Error",
+      success: false,
+    });
+  }
+};
+
 const markAllAsRead = (req, res) => {
-  const { userId, role } = req.body;
-  // console.log("Body is ",req.body)
-  // console.log("UserID is ",userId)
-  // console.log("roleis ",role)
+  // Always bind to JWT identity — ignore client-supplied userId
+  const userId = req.user?.id;
+  const role = (req.user?.role || "").toLowerCase();
   if (!userId || !role) {
     return res.status(400).json({ 
       message: "User ID and role are required",
@@ -310,8 +376,9 @@ const markAllAsRead = (req, res) => {
   }
   
   try {
-    const receiverColumn =
-      role === "student" || role === "teacher" || role === "professional"
+    const isMemberRole =
+      role === "student" || role === "teacher" || role === "professional";
+    const receiverColumn = isMemberRole
         ? "receiver_user_id"
         : "receiver_institute_id";
 
@@ -428,5 +495,6 @@ module.exports = {
   markRead,
   getAllNotification,
   markAllAsRead,
+  clearAllNotifications,
   getNotificationContent
 };

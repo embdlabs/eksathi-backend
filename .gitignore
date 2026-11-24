@@ -17,6 +17,15 @@ package-lock.json
 index.js.save
 index.js.save.1
 
+# local DB tryouts / dumps (never commit)
+/backups/
+
+# local IDE / temp / uploads (never commit)
+.cursor/
+_tmp_*.js
+/uploads/
+/scratch/
+
 # misc
 .DS_Store
 .env

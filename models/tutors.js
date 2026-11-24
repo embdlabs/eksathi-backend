@@ -67,7 +67,12 @@ module.exports = function (sequelize, DataTypes) {
       },
       connectionStatus: {
         type: DataTypes.ENUM('process', 'pending', 'completed'),
-        defaultValue: 'pending'
+        defaultValue: 'process'
+      },
+      requester_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
       },
       createdAt: {
         type: DataTypes.DATE,

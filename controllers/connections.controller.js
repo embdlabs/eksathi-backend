@@ -220,6 +220,11 @@
 
 const { mysqlcon } = require("../model/db");
 const { findExpertise } = require("../service/utilities.service");
+const {
+  ensureConnectionPrivacyTables,
+  isUserConnectionBlocked,
+  getHideBetweenUsers,
+} = require("../utils/ensureConnectionPrivacy");
 
 // Generate a unique slug for the question
 const generateSlug = (userId, receiverId) => {
@@ -229,15 +234,31 @@ const generateSlug = (userId, receiverId) => {
 
 // Check if user exists then send connection requests
 const sendConnectionRequest = async (req, res) => {
-  const { senderId, receiverId } = req.body;
-  console.log("senderID and receiverId is ", req.body);
+  // Bind sender to JWT — ignore client-supplied senderId for auth
+  const senderId = req.user?.id;
+  const { receiverId } = req.body;
 
   try {
+    if (!senderId || !receiverId) {
+      return res.status(400).json({ message: "receiverId is required" });
+    }
     // Check if sender and receiver are the same
-    if (senderId === receiverId) {
+    if (String(senderId) === String(receiverId)) {
       return res
         .status(400)
         .json({ message: "Cannot send connection request to yourself" });
+    }
+
+    // Admin-side connection block (e.g. after abuse report)
+    if (await isUserConnectionBlocked(receiverId)) {
+      return res.status(403).json({
+        message: "This user cannot receive connection requests at this time",
+      });
+    }
+    if (await isUserConnectionBlocked(senderId)) {
+      return res.status(403).json({
+        message: "Your account cannot send connection requests at this time",
+      });
     }
 
     // Check if sender and receiver exist in the database
@@ -322,6 +343,17 @@ const sendConnectionRequest = async (req, res) => {
                     .json({ message: "Internal server error" });
                 }
 
+                try {
+                  const {
+                    notifyConnectionRequest,
+                  } = require("../service/connectionNotify.service");
+                  notifyConnectionRequest(
+                    senderId,
+                    receiverId,
+                    results.insertId
+                  ).catch(() => {});
+                } catch (_) { /* ignore */ }
+
                 res.status(200).json({
                   message: "Connection request sent successfully",
                   connectionId: results.insertId,
@@ -340,18 +372,16 @@ const sendConnectionRequest = async (req, res) => {
 
 // Get those connections which requests are pending (sent by user)
 const pendingRequestsSent = async (req, res) => {
-  const { userId } = req.query;
+  const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(400).json({ message: "User ID is required" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
-  console.log(`Received request for userId: ${userId}`);
-
   try {
-    // Get all pending connection requests for the given user ID
+    // Get all pending connection requests for the JWT user (no email)
     const sql = `
-            SELECT users.id, users.username, users.first_name, users.last_name, users.email, users.bio, users.avatar_url, connections.status, connections.id as connectionId
+            SELECT users.id, users.username, users.first_name, users.last_name, users.role, users.bio, users.avatar_url, connections.status, connections.createdAt, connections.id as connectionId
             FROM connections
             INNER JOIN users ON connections.receiver_id = users.id
             WHERE sender_id = ? AND connections.status = 'pending';
@@ -379,18 +409,16 @@ const pendingRequestsSent = async (req, res) => {
 
 // Get pending requests received by user
 const pendingRequestsReceived = async (req, res) => {
-  const { userId } = req.query;
+  const userId = req.user?.id;
 
   if (!userId) {
-    return res.status(400).json({ message: "User ID is required" });
+    return res.status(401).json({ message: "Unauthorized" });
   }
 
-  console.log(`Received request for userId: ${userId}`);
-
   try {
-    // Get all pending connection requests received by the given user ID
+    // Get all pending connection requests received by the JWT user (no email)
     const sql = `
-            SELECT users.id, users.username, users.first_name, users.last_name, users.email, users.bio, users.avatar_url, connections.status, connections.id as connectionId
+            SELECT users.id, users.username, users.first_name, users.last_name, users.role, users.bio, users.avatar_url, connections.status, connections.createdAt, connections.id as connectionId
             FROM connections
             INNER JOIN users ON connections.sender_id = users.id
             WHERE receiver_id = ? AND connections.status = 'pending';
@@ -425,10 +453,15 @@ const getConnections = async (req, res) => {
   }
 
   try {
+    await ensureConnectionPrivacyTables();
     mysqlcon.query(
-      `SELECT DISTINCT users.id, users.username, users.first_name, users.last_name, users.email, users.role, users.bio, users.avatar_url, connections.status 
+      `SELECT DISTINCT users.id, users.username, users.first_name, users.last_name, users.role, users.bio, users.avatar_url,
+              connections.status, connections.createdAt, connections.id AS connectionId,
+              connections.sender_id, connections.receiver_id,
+              h.hidden_by AS hiddenBy, h.createdAt AS hiddenAt
             FROM connections
             INNER JOIN users ON (connections.receiver_id = users.id OR connections.sender_id = users.id)
+            LEFT JOIN connection_hides h ON h.connection_id = connections.id
             WHERE (connections.sender_id = ? OR connections.receiver_id = ?) AND connections.status = 'accepted' AND users.id != ?
             ORDER BY users.username ASC`,
       [userId, userId, userId],
@@ -442,7 +475,18 @@ const getConnections = async (req, res) => {
           skills = skills[0]?.skill_name
             ? skills[0]?.skill_name.split(", ")
             : [];
-          connections[i] = { ...connections[i], skills };
+          const hiddenBy = connections[i].hiddenBy || null;
+          const isHidden = Boolean(hiddenBy);
+          connections[i] = {
+            ...connections[i],
+            skills,
+            isHidden,
+            hiddenBy,
+            canUnhide: isHidden && String(hiddenBy) === String(userId),
+            // Other party sees limited card when hidden by someone else
+            userDisabled:
+              isHidden && String(hiddenBy) !== String(userId),
+          };
         }
         return res
           .status(200)
@@ -457,15 +501,17 @@ const getConnections = async (req, res) => {
 
 // To check if a connection exists and return its status
 const checkConnectionStatus = async (req, res) => {
-  const { userId, otherUserId } = req.query;
+  // Bind "self" to JWT — ignore client-supplied userId
+  const userId = req.user?.id;
+  const { otherUserId } = req.query;
 
   if (!userId || !otherUserId) {
-    return res.status(400).json({ message: "Both user IDs are required" });
+    return res.status(400).json({ message: "Authentication and otherUserId are required" });
   }
 
   try {
     mysqlcon.query(
-      "SELECT * FROM connections WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+      "SELECT id, sender_id, receiver_id, status, createdAt FROM connections WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
       [userId, otherUserId, otherUserId, userId],
       (err, results) => {
         if (err) {
@@ -484,19 +530,38 @@ const checkConnectionStatus = async (req, res) => {
         let status = connection.status;
         let relationship = "unknown";
 
-        // Determine the relationship from userId's perspective
+        // Determine the relationship from JWT user's perspective
         if (connection.sender_id == userId) {
           relationship = "sender";
         } else if (connection.receiver_id == userId) {
           relationship = "receiver";
         }
 
-        return res.status(200).json({
-          message: "Connection found",
-          connection: connection,
-          connectionStatus: status,
-          relationship: relationship,
-        });
+        // Attach hide privacy (does not change accepted status — reconnect blocked)
+        getHideBetweenUsers(userId, otherUserId)
+          .then((hideRow) => {
+            const isHidden = Boolean(hideRow?.hidden_by);
+            return res.status(200).json({
+              message: "Connection found",
+              connection: connection,
+              connectionStatus: status,
+              relationship: relationship,
+              isHidden,
+              hiddenBy: hideRow?.hidden_by || null,
+              canUnhide:
+                isHidden && String(hideRow?.hidden_by) === String(userId),
+              messagingAllowed: status === "accepted" && !isHidden,
+            });
+          })
+          .catch(() =>
+            res.status(200).json({
+              message: "Connection found",
+              connection: connection,
+              connectionStatus: status,
+              relationship: relationship,
+              messagingAllowed: status === "accepted",
+            })
+          );
       }
     );
   } catch (error) {
@@ -509,12 +574,11 @@ const checkConnectionStatus = async (req, res) => {
 const actionConnection = async (req, res) => {
   const { connectionId } = req.params;
   const { action } = req.body; // either 'accept' or 'reject'
-  const { userId } = req.body; // Current user ID who is taking action
-
-  console.log("connectionId", connectionId, "action", action, "userId", userId);
+  // Bind actor to JWT — ignore client-supplied userId
+  const userId = req.user?.id;
 
   if (!action || !userId) {
-    return res.status(400).json({ message: "Action and user ID are required" });
+    return res.status(400).json({ message: "Action required and must be authenticated" });
   }
 
   if (action !== "accept" && action !== "reject") {
@@ -612,64 +676,40 @@ const actionConnection = async (req, res) => {
                   .json({ message: "Internal Server Error" });
               }
 
-              // Now insert a question entry with proper names
-              const slug = generateSlug(
-                connection.sender_id,
-                connection.receiver_id
-              );
-              const questionTitle = `Connection established between ${senderDisplay} and ${receiverDisplay}`;
-              const questionBody = `This question was automatically generated when ${senderDisplay} and ${receiverDisplay} connected on the platform.`;
+              // LinkedIn-style Wall + notify/email both parties
+              try {
+                const {
+                  announceConnection,
+                } = require("../service/wallActivity.service");
+                announceConnection(
+                  connection.sender_id,
+                  connection.receiver_id
+                ).catch((questionErr) => {
+                  console.error(
+                    "Error inserting connection wall post:",
+                    questionErr
+                  );
+                });
+              } catch (questionErr) {
+                console.error("Error inserting question:", questionErr);
+              }
 
-              // Insert into questions table
-              const questionSql = `
-                                INSERT INTO questions 
-                                (title, slug, tags, body, user_id, is_answered, is_hidden, brief, notification) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            `;
+              try {
+                const {
+                  notifyConnectionAccepted,
+                } = require("../service/connectionNotify.service");
+                notifyConnectionAccepted(
+                  connection.sender_id,
+                  connection.receiver_id,
+                  connectionId
+                ).catch(() => {});
+              } catch (_) { /* ignore */ }
 
-              const questionTags = JSON.stringify([
-                "connection",
-                "auto-generated",
-              ]);
-              const questionData = [
-                questionTitle,
-                slug,
-                questionTags,
-                questionBody,
-                connection.sender_id, // Using sender as the user_id for the question
-                "pending", // is_answered status
-                0, // is_hidden - not hidden
-                "Auto-generated question from connection acceptance",
-                "connection_established",
-              ];
-
-              mysqlcon.query(
-                questionSql,
-                questionData,
-                (questionErr, questionResult) => {
-                  if (questionErr) {
-                    console.error("Error inserting question:", questionErr);
-                    // Still return success for connection, but log the question error
-                    console.log(
-                      "Connection accepted, but failed to create question entry"
-                    );
-                  } else {
-                    console.log(
-                      "Question entry created with ID:",
-                      questionResult.insertId
-                    );
-                  }
-
-                  return res.status(200).json({
-                    message:
-                      "Connection request has been accepted successfully",
-                    connectionId: connectionId,
-                    questionCreated: !questionErr,
-                    questionId: questionResult ? questionResult.insertId : null,
-                    questionTitle: questionTitle,
-                  });
-                }
-              );
+              return res.status(200).json({
+                message: "Connection request has been accepted successfully",
+                connectionId: connectionId,
+                questionTitle: `${senderDisplay} & ${receiverDisplay} are connected now`,
+              });
             }
           );
         } else if (action === "reject") {
@@ -702,15 +742,16 @@ const actionConnection = async (req, res) => {
 
 // Helper function to check and handle all connection scenarios
 const handleConnectionRequest = async (req, res) => {
-  const { senderId, receiverId, action } = req.body; // action: 'send', 'check', 'cancel'
+  const senderId = req.user?.id;
+  const { receiverId, action } = req.body; // action: 'send', 'check', 'cancel'
 
   if (!senderId || !receiverId) {
     return res
       .status(400)
-      .json({ message: "Both sender and receiver IDs are required" });
+      .json({ message: "receiverId is required" });
   }
 
-  if (senderId === receiverId) {
+  if (String(senderId) === String(receiverId)) {
     return res
       .status(400)
       .json({ message: "Cannot send connection request to yourself" });
@@ -797,6 +838,175 @@ const handleConnectionRequest = async (req, res) => {
   }
 };
 
+/** Withdraw pending request or remove an accepted connection (either party). */
+const withdrawConnection = async (req, res) => {
+  const connectionId = req.params.connectionId;
+  const userId = req.user?.id;
+
+  if (!connectionId || !userId) {
+    return res.status(400).json({ message: "connectionId required" });
+  }
+
+  try {
+    const [rows] = await mysqlcon.promise().query(
+      `SELECT id, sender_id, receiver_id, status FROM connections WHERE id = ? LIMIT 1`,
+      [connectionId]
+    );
+    const row = rows[0];
+    if (!row) {
+      return res.status(404).json({ message: "Connection not found" });
+    }
+    if (
+      String(row.sender_id) !== String(userId) &&
+      String(row.receiver_id) !== String(userId)
+    ) {
+      return res.status(403).json({ message: "Not allowed to withdraw this connection" });
+    }
+
+    await mysqlcon.promise().query(`DELETE FROM connections WHERE id = ?`, [connectionId]);
+    return res.status(200).json({
+      message:
+        row.status === "pending"
+          ? "Connection request withdrawn"
+          : "Connection removed",
+      connectionId: Number(connectionId),
+    });
+  } catch (error) {
+    console.error("withdrawConnection:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/** Hide an accepted connection — only a party to the connection. */
+const hideConnection = async (req, res) => {
+  const connectionId = req.params.connectionId;
+  const userId = req.user?.id;
+  if (!connectionId || !userId) {
+    return res.status(400).json({ message: "connectionId required" });
+  }
+  try {
+    await ensureConnectionPrivacyTables();
+    const [rows] = await mysqlcon.promise().query(
+      `SELECT id, sender_id, receiver_id, status FROM connections WHERE id = ? LIMIT 1`,
+      [connectionId]
+    );
+    const row = rows[0];
+    if (!row) return res.status(404).json({ message: "Connection not found" });
+    if (
+      String(row.sender_id) !== String(userId) &&
+      String(row.receiver_id) !== String(userId)
+    ) {
+      return res.status(403).json({ message: "Not allowed" });
+    }
+    if (row.status !== "accepted") {
+      return res.status(400).json({ message: "Only accepted connections can be hidden" });
+    }
+    const [existing] = await mysqlcon.promise().query(
+      `SELECT hidden_by FROM connection_hides WHERE connection_id = ? LIMIT 1`,
+      [connectionId]
+    );
+    if (existing.length) {
+      return res.status(200).json({
+        message: "Connection already hidden",
+        hiddenBy: existing[0].hidden_by,
+        canUnhide: String(existing[0].hidden_by) === String(userId),
+      });
+    }
+    await mysqlcon.promise().query(
+      `INSERT INTO connection_hides (connection_id, hidden_by) VALUES (?, ?)`,
+      [connectionId, userId]
+    );
+    return res.status(200).json({
+      message: "Connection hidden",
+      connectionId: Number(connectionId),
+      hiddenBy: userId,
+      canUnhide: true,
+    });
+  } catch (error) {
+    console.error("hideConnection:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/** Unhide — only the member who hid can unhide. */
+const unhideConnection = async (req, res) => {
+  const connectionId = req.params.connectionId;
+  const userId = req.user?.id;
+  if (!connectionId || !userId) {
+    return res.status(400).json({ message: "connectionId required" });
+  }
+  try {
+    await ensureConnectionPrivacyTables();
+    const [existing] = await mysqlcon.promise().query(
+      `SELECT hidden_by FROM connection_hides WHERE connection_id = ? LIMIT 1`,
+      [connectionId]
+    );
+    if (!existing.length) {
+      return res.status(404).json({ message: "Connection is not hidden" });
+    }
+    if (String(existing[0].hidden_by) !== String(userId)) {
+      return res.status(403).json({
+        message: "Only the member who hid this connection can unhide it",
+      });
+    }
+    await mysqlcon.promise().query(
+      `DELETE FROM connection_hides WHERE connection_id = ?`,
+      [connectionId]
+    );
+    return res.status(200).json({
+      message: "Connection unhidden",
+      connectionId: Number(connectionId),
+    });
+  } catch (error) {
+    console.error("unhideConnection:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+/** Admin: block a user from receiving/sending connection requests after abuse. */
+const adminBlockConnectionUser = async (req, res) => {
+  const userId = req.params.userId || req.body?.userId;
+  const adminId = req.user?.id;
+  const reason = req.body?.reason || "Abuse report";
+  if (!userId) {
+    return res.status(400).json({ message: "userId required" });
+  }
+  try {
+    await ensureConnectionPrivacyTables();
+    await mysqlcon.promise().query(
+      `INSERT INTO connection_blocks (user_id, blocked_by_admin, reason)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         blocked_by_admin = VALUES(blocked_by_admin),
+         reason = VALUES(reason),
+         createdAt = CURRENT_TIMESTAMP`,
+      [userId, adminId || null, reason]
+    );
+    return res.status(200).json({ message: "User blocked from connections", userId });
+  } catch (error) {
+    console.error("adminBlockConnectionUser:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+const adminUnblockConnectionUser = async (req, res) => {
+  const userId = req.params.userId;
+  if (!userId) {
+    return res.status(400).json({ message: "userId required" });
+  }
+  try {
+    await ensureConnectionPrivacyTables();
+    await mysqlcon.promise().query(
+      `DELETE FROM connection_blocks WHERE user_id = ?`,
+      [userId]
+    );
+    return res.status(200).json({ message: "Connection block removed", userId });
+  } catch (error) {
+    console.error("adminUnblockConnectionUser:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
 module.exports = {
   sendConnectionRequest,
   pendingRequestsSent,
@@ -805,4 +1015,9 @@ module.exports = {
   actionConnection,
   checkConnectionStatus,
   handleConnectionRequest,
+  withdrawConnection,
+  hideConnection,
+  unhideConnection,
+  adminBlockConnectionUser,
+  adminUnblockConnectionUser,
 };

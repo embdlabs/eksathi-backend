@@ -10,6 +10,7 @@ const { logg } = require("./utils/utils");
 const Users = require("./models/users");
 const { saveMsg } = require("./controllers/messages.controller");
 const { mysqlcon } = require("./model/db");
+const { verifyJWT } = require("./service/auth.service");
 
 const app = require("express")();
 const http = require("http").createServer(app);
@@ -50,7 +51,7 @@ const addNewUser = (userData, socketId) => {
   });
 
   const existingUserIndex = onlineUsers.findIndex(
-    (user) => user.userData.id === userData.id
+    (user) => String(user.userData.id) === String(userData.id)
   );
 
   const userPayload = {
@@ -157,8 +158,13 @@ const removeUser = (socketId) => {
 };
 
 // Get user by ID
+const isOnlineFlag = (flag) =>
+  !(flag === false || flag === "false" || flag === 0);
+
 const getUser = (userId) => {
-  const user = onlineUsers.find((user) => user.userData.id == userId);
+  const user = onlineUsers.find(
+    (user) => String(user.userData.id) === String(userId)
+  );
 
   if (user) {
     console.log(`🔍 Found user ${userId}:`, {
@@ -188,6 +194,14 @@ const cleanupStaleConnections = () => {
 
     if (isStale) {
       console.log(`🧹 Removing stale connection: ${user.userData.email} (Last seen: ${user.userData.last_seen})`);
+      // Keep Experts list honest — clear stale is_online in DB
+      if (mysqlcon && user.userData?.id) {
+        mysqlcon.query(
+          `UPDATE users SET is_online = 'false', updatedAt = NOW() WHERE id = ?`,
+          [user.userData.id],
+          () => {}
+        );
+      }
     }
 
     return !isStale;
@@ -219,30 +233,69 @@ const InitSocket = () => {
     // ============================================
     // USER REGISTRATION
     // ============================================
-    socket.on("ADD_USER", (userData) => {
-      console.log(`👤 ADD_USER received from: ${userData.email} (ID: ${userData.id})`);
-
-      if (!userData || !userData.id) {
-        console.error("❌ Invalid user data received:", userData);
+    socket.on("ADD_USER", async (userData) => {
+      if (!userData) {
         socket.emit("CONNECTION_ERROR", {
           error: "Invalid user data",
-          message: "User ID is required",
+          message: "User data is required",
         });
         return;
       }
 
-      const addedUser = addNewUser(userData, socket.id);
+      // Bind identity to JWT — ignore spoofed client ids
+      const rawToken =
+        userData.token ||
+        socket.handshake?.auth?.token ||
+        (socket.handshake?.headers?.authorization || "").replace(/^Bearer\s+/i, "");
+      if (!rawToken || !process.env.JWT_SECRET) {
+        socket.emit("CONNECTION_ERROR", {
+          error: "Unauthorized",
+          message: "Valid auth token required to register on socket",
+        });
+        return;
+      }
+
+      let verified;
+      try {
+        verified = await verifyJWT(String(rawToken).replace(/^Bearer\s+/i, ""), process.env.JWT_SECRET);
+      } catch (err) {
+        socket.emit("CONNECTION_ERROR", {
+          error: "Unauthorized",
+          message: "Invalid or expired token",
+        });
+        return;
+      }
+
+      const jwtUser = verified?.data || verified;
+      const boundId = jwtUser?.id;
+      if (!boundId) {
+        socket.emit("CONNECTION_ERROR", {
+          error: "Unauthorized",
+          message: "Token missing user id",
+        });
+        return;
+      }
+
+      const safeUser = {
+        id: boundId,
+        email: jwtUser.email || userData.email,
+        first_name: userData.first_name || jwtUser.first_name,
+        last_name: userData.last_name || jwtUser.last_name,
+        username: userData.username || jwtUser.username,
+        role: jwtUser.role || userData.role,
+        avatar_url: userData.avatar_url,
+      };
+
+      const addedUser = addNewUser(safeUser, socket.id);
 
       socket.emit("CONNECTION_SUCCESS", {
         message: "Socket connection established and user added",
         socketId: socket.id,
-        userId: userData.id,
+        userId: boundId,
         timestamp: new Date().toISOString(),
         onlineUsersCount: onlineUsers.length,
         userData: addedUser.userData,
       });
-
-      console.log(`✅ User ${userData.email} successfully registered with socket ${socket.id}`);
 
       io.emit("USER_ADDED", onlineUsers);
     });
@@ -250,25 +303,31 @@ const InitSocket = () => {
     // ============================================
     // HEARTBEAT HANDLING
     // ============================================
-    socket.on("USER_HEARTBEAT", (userId) => {
-      const userIndex = onlineUsers.findIndex((user) => user.userData.id == userId);
+    socket.on("USER_HEARTBEAT", () => {
+      // Heartbeat only for this socket's registered user
+      const userIndex = onlineUsers.findIndex(
+        (user) =>
+          user.userData?.socketId === socket.id || user.socketId === socket.id
+      );
 
       if (userIndex !== -1) {
+        const uid = onlineUsers[userIndex].userData.id;
         onlineUsers[userIndex].userData.last_seen = new Date().toISOString();
         onlineUsers[userIndex].userData.is_online = true;
-        console.log(`💓 Heartbeat received from user ${userId} (${onlineUsers[userIndex].userData.email})`);
+        console.log(`💓 Heartbeat received from user ${uid} (${onlineUsers[userIndex].userData.email})`);
       } else {
-        console.log(`⚠️ Heartbeat from unknown user: ${userId}`);
+        console.log(`⚠️ Heartbeat from unregistered socket: ${socket.id}`);
       }
     });
 
-    socket.on("heartbeat", (data) => {
-      if (data && data.userId) {
-        const userIndex = onlineUsers.findIndex((user) => user.userData.id == data.userId);
-        if (userIndex !== -1) {
-          onlineUsers[userIndex].userData.last_seen = new Date().toISOString();
-          onlineUsers[userIndex].userData.is_online = true;
-        }
+    socket.on("heartbeat", () => {
+      const userIndex = onlineUsers.findIndex(
+        (user) =>
+          user.userData?.socketId === socket.id || user.socketId === socket.id
+      );
+      if (userIndex !== -1) {
+        onlineUsers[userIndex].userData.last_seen = new Date().toISOString();
+        onlineUsers[userIndex].userData.is_online = true;
       }
 
       socket.emit("heartbeat-response", {
@@ -281,6 +340,32 @@ const InitSocket = () => {
     // MESSAGE HANDLING
     // ============================================
     socket.on("SEND_MSG", async (msg) => {
+      // Bind sender to the socket's registered user — ignore spoofed sender ids
+      // socketId lives on userData (see addNewUser), not the wrapper object
+      const registered = onlineUsers.find(
+        (u) =>
+          u.userData?.socketId === socket.id || u.socketId === socket.id
+      );
+      if (!registered?.userData?.id) {
+        socket.emit("SAVE_MSG_ERROR", {
+          error: "Not authenticated on socket",
+          details: "Register with ADD_USER before sending",
+        });
+        return;
+      }
+      const boundSenderId = registered.userData.id;
+      const boundRole = registered.userData.role || msg.sender_role;
+      msg.sender = boundSenderId;
+      if (boundRole === "institute") {
+        msg.sender_institute_id = boundSenderId;
+        msg.sender_user_id = null;
+        msg.sender_role = "institute";
+      } else {
+        msg.sender_user_id = boundSenderId;
+        msg.sender_institute_id = null;
+        msg.sender_role = boundRole || msg.sender_role;
+      }
+
       console.log("📨 Message received:", {
         from: msg.sender,
         to: msg.receiver,
@@ -339,7 +424,11 @@ const InitSocket = () => {
       }
 
       const receiver = getUser(msg.receiver);
-      if (receiver && receiver.userData.socketId && receiver.userData.is_online) {
+      if (
+        receiver &&
+        receiver.userData.socketId &&
+        isOnlineFlag(receiver.userData.is_online)
+      ) {
         console.log(`📤 Sending message to receiver ${receiver.userData.email} (Socket: ${receiver.userData.socketId})`);
         io.to(receiver.userData.socketId).emit("RECEIVED_MSG", messageToSend);
       } else {
@@ -414,17 +503,32 @@ const InitSocket = () => {
       content_id,
       message = "You got a new notification",
     }) => {
-      console.log("📩 Notification request:", {
-        from: sender_name,
-        to: receiver_id,
-        type: type,
-      });
+      // Bind sender to the socket's registered user — ignore spoofed sender_id
+      const registered = onlineUsers.find(
+        (u) =>
+          u.userData?.socketId === socket.id || u.socketId === socket.id
+      );
+      if (!registered?.userData?.id) {
+        socket.emit("notification-error", {
+          error: "Not authenticated on socket",
+          details: "Register with ADD_USER before sending notifications",
+        });
+        return;
+      }
+      const boundSenderId = registered.userData.id;
+      const boundRole = registered.userData.role || sender_role;
+      const boundName =
+        sender_name ||
+        [registered.userData.first_name, registered.userData.last_name]
+          .filter(Boolean)
+          .join(" ") ||
+        "User";
 
       try {
         const notification = await createNotification(
-          sender_role,
+          boundRole,
           receiver_role,
-          sender_id,
+          boundSenderId,
           receiver_id,
           type,
           content_id,
@@ -442,18 +546,19 @@ const InitSocket = () => {
             notification_type: notification.notification_type || type,
             type: type,
             content_id: notification.content_id || content_id,
-            sender_id: notification.sender_id || sender_id,
+            sender_id: notification.sender_id || boundSenderId,
             receiver_id: notification.receiver_id || receiver_id,
-            sender_name: sender_name,
-            sender_first_name: sender_name ? sender_name.split(" ")[0] : "User",
-            sender_last_name: sender_name ? sender_name.split(" ").slice(1).join(" ") : "",
-            first_name: sender_name ? sender_name.split(" ")[0] : "User",
-            last_name: sender_name ? sender_name.split(" ").slice(1).join(" ") : "",
+            sender_name: boundName,
+            sender_first_name: boundName ? boundName.split(" ")[0] : "User",
+            sender_last_name: boundName ? boundName.split(" ").slice(1).join(" ") : "",
+            first_name: boundName ? boundName.split(" ")[0] : "User",
+            last_name: boundName ? boundName.split(" ").slice(1).join(" ") : "",
             is_read: notification.is_read || 0,
             is_broadcast: notification.is_broadcast || false,
             createdAt: notification.createdAt || notification.created_at || new Date().toISOString(),
             created_at: notification.createdAt || notification.created_at || new Date().toISOString(),
             ...notification,
+            sender_id: boundSenderId,
           };
         } else {
           notificationData = {
@@ -462,13 +567,13 @@ const InitSocket = () => {
             notification_type: type,
             type: type,
             content_id: content_id,
-            sender_id: sender_id,
+            sender_id: boundSenderId,
             receiver_id: receiver_id,
-            sender_name: sender_name,
-            sender_first_name: sender_name ? sender_name.split(" ")[0] : "User",
-            sender_last_name: sender_name ? sender_name.split(" ").slice(1).join(" ") : "",
-            first_name: sender_name ? sender_name.split(" ")[0] : "User",
-            last_name: sender_name ? sender_name.split(" ").slice(1).join(" ") : "",
+            sender_name: boundName,
+            sender_first_name: boundName ? boundName.split(" ")[0] : "User",
+            sender_last_name: boundName ? boundName.split(" ").slice(1).join(" ") : "",
+            first_name: boundName ? boundName.split(" ")[0] : "User",
+            last_name: boundName ? boundName.split(" ").slice(1).join(" ") : "",
             is_read: 0,
             is_broadcast: false,
             createdAt: new Date().toISOString(),
@@ -478,8 +583,12 @@ const InitSocket = () => {
 
         const receiver = getUser(receiver_id);
 
-        if (receiver && receiver.userData && receiver.userData.socketId && receiver.userData.is_online) {
-          console.log(`✅ Sending notification to ${receiver.userData.email} (Socket: ${receiver.userData.socketId})`);
+        if (
+          receiver &&
+          receiver.userData &&
+          receiver.userData.socketId &&
+          isOnlineFlag(receiver.userData.is_online)
+        ) {
           io.to(receiver.userData.socketId).emit("get-notification", notificationData);
           socket.emit("notification-sent", {
             success: true,
@@ -504,46 +613,33 @@ const InitSocket = () => {
     });
 
     // ============================================
-    // TEST NOTIFICATION
+    // TEST NOTIFICATION (disabled — spoofing vector)
     // ============================================
-    socket.on("test-send-notification", (data) => {
-      console.log("🧪 Test notification request:", data);
+    socket.on("test-send-notification", () => {
+      socket.emit("notification-error", {
+        error: "Test notifications are disabled",
+      });
+    });
 
-      const testNotification = {
-        id: `test-${Date.now()}`,
-        message: data.message || "This is a test notification",
-        notification_type: 1,
-        type: 1,
-        content_id: 999,
-        sender_id: "system",
-        receiver_id: data.receiver_id,
-        sender_name: "System",
-        sender_first_name: "System",
-        sender_last_name: "",
-        first_name: "System",
-        last_name: "",
-        is_read: 0,
-        is_broadcast: false,
-        createdAt: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      };
+    // ============================================
+    // WALL VOTE LIVE COUNTS
+    // ============================================
+    socket.on("VOTE_UPDATED", (payload) => {
+      if (!payload?.questionId) return;
+      // Broadcast so Home + Wall viewers see updated like/dislike counts
+      socket.broadcast.emit("VOTE_UPDATED", {
+        questionId: payload.questionId,
+        upvotes: Number(payload.upvotes) || 0,
+        downvotes: Number(payload.downvotes) || 0,
+      });
+    });
 
-      const receiver = getUser(data.receiver_id);
-
-      if (receiver && receiver.userData && receiver.userData.socketId) {
-        io.to(receiver.userData.socketId).emit("get-notification", testNotification);
-        socket.emit("test-result", {
-          success: true,
-          message: "Test notification sent",
-          receiverSocketId: receiver.userData.socketId,
-        });
-      } else {
-        socket.emit("test-result", {
-          success: false,
-          message: "Receiver not found online",
-          receiver_id: data.receiver_id,
-        });
-      }
+    socket.on("COMMENT_UPDATED", (payload) => {
+      if (!payload?.questionId) return;
+      socket.broadcast.emit("COMMENT_UPDATED", {
+        questionId: payload.questionId,
+        commentCount: Number(payload.commentCount) || 0,
+      });
     });
 
     // ============================================
@@ -603,7 +699,23 @@ const InitSocket = () => {
     // EXPLICIT USER REMOVAL
     // ============================================
     socket.on("USER_REMOVED", (data) => {
-      const userId = data.id || data.userId;
+      // Bind to this socket's registered user — ignore spoofed client ids
+      const registered = onlineUsers.find(
+        (u) =>
+          u.userData?.socketId === socket.id || u.socketId === socket.id
+      );
+      const boundId = registered?.userData?.id;
+      if (!boundId) {
+        console.log(`⚠️ USER_REMOVED ignored — socket ${socket.id} not registered`);
+        return;
+      }
+      const claimed = data?.id || data?.userId;
+      if (claimed != null && String(claimed) !== String(boundId)) {
+        console.log(
+          `⚠️ USER_REMOVED spoof blocked: claimed=${claimed} bound=${boundId}`
+        );
+      }
+      const userId = boundId;
 
       console.log(`👋 User explicitly logging out: ${userId}`);
 
@@ -618,9 +730,8 @@ const InitSocket = () => {
       if (mysqlcon) {
         try {
           const query = `UPDATE users SET is_online = 'false', updatedAt = NOW() WHERE id = ?`;
-          mysqlcon.query(query, [userId], (err, result) => {
+          mysqlcon.query(query, [userId], (err) => {
             if (err) {
-              // BUG FIX 5: was userData.id (undefined in this scope) — use userId instead
               console.error(`❌ Database error updating online status for user ${userId}:`, err);
             }
           });
@@ -657,4 +768,26 @@ const InitSocket = () => {
   });
 };
 
-module.exports = { app, http, InitSocket };
+/** Push an in-app notification to a user if they are currently online. */
+const pushNotificationToUser = (userId, notificationData) => {
+  try {
+    const receiver = getUser(userId);
+    if (
+      receiver?.userData?.socketId &&
+      isOnlineFlag(receiver.userData.is_online)
+    ) {
+      io.to(receiver.userData.socketId).emit(
+        "get-notification",
+        notificationData
+      );
+      return true;
+    }
+  } catch (e) {
+    console.error("pushNotificationToUser:", e?.message || e);
+  }
+  return false;
+};
+
+const getIO = () => io;
+
+module.exports = { app, http, InitSocket, pushNotificationToUser, getUser, getIO };

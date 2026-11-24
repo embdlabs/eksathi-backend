@@ -170,10 +170,8 @@ const verifyAuth = async (req, res, next) => {
           }
         );
       } catch (err) {
-        console.log('jwt err', err);
-        res
-          .status(498)
-          .json({ message: "Invalid Token", err: err, header: token });
+        console.log('jwt err', err?.name || err?.message || "verify failed");
+        res.status(498).json({ message: "Invalid Token" });
       }
     }
   } catch (error) {
@@ -204,22 +202,33 @@ const routeVerifierJwt = async (req, res, next) => {
   if (!token) {
     return res.status(401).json({
       message: "Unauthorized Access",
-      header: req.headers,
     });
   } else {
     token = token.replace("Bearer ", "");
     try {
       const verfied = await verifyJWT(token, process.env.JWT_SECRET);
       req.user = verfied.data;
-      // console.log("data :",req.user);
       next();
     } catch (err) {
-      console.log('jwt err', err);
-      res
-        .status(401)
-        .json({ message: "Invalid Token", err: err, header: token });
+      console.log("jwt err", err?.name || err?.message || "verify failed");
+      res.status(401).json({ message: "Invalid Token" });
     }
   }
+};
+
+/** Attach req.user when Bearer token is valid; never block unauthenticated callers. */
+const optionalRouteVerifierJwt = async (req, res, next) => {
+  try {
+    const raw = req.headers.authorization;
+    if (!raw) return next();
+    const token = String(raw).replace(/^Bearer\s+/i, "").trim();
+    if (!token) return next();
+    const verified = await verifyJWT(token, process.env.JWT_SECRET);
+    req.user = verified?.data || verified;
+  } catch (_) {
+    /* guest / bad token — continue without user */
+  }
+  return next();
 };
 const authorizeRole=(roles)=>{
   console.log("Roles is ",roles)
@@ -232,9 +241,17 @@ const authorizeRole=(roles)=>{
 }
 
 function generateOTP() {
+  // Local/dev testing: fixed OTP so you don't need to dig in DB/email
+  if (
+    process.env.NODE_ENV === "development" ||
+    process.env.LOCAL_FIXED_OTP === "true"
+  ) {
+    return "123456";
+  }
+
   const length = 6; // Number of digits in the OTP code
-  const chars = '0123456789'; // Possible characters in the OTP code
-  let code = '';
+  const chars = "0123456789"; // Possible characters in the OTP code
+  let code = "";
 
   for (let i = 0; i < length; i++) {
     const randomIndex = Math.floor(Math.random() * chars.length);
@@ -333,6 +350,7 @@ module.exports = {
   verifyJWT,
   createJWT,
   routeVerifierJwt,
+  optionalRouteVerifierJwt,
   generateOTP,
   createPasswordForUser,
   verifyOrCreateUserForGoogleOAuth2,

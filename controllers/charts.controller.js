@@ -14,9 +14,25 @@ const getJobApplicationStatusByInstitute = async (req, res) => {
     });
 
     if (!jobDescriptions.length) {
-      return res
-        .status(404)
-        .json({ message: "No job descriptions found for this institute" });
+      // Empty institute = empty chart (not an error toast on Dashboard)
+      return res.json({
+        response: {
+          series: [
+            { name: "Pending", data: [] },
+            { name: "Hired", data: [] },
+            { name: "Hold", data: [] },
+            { name: "Rejected", data: [] },
+            { name: "Reviewed", data: [] },
+          ],
+          options: {
+            chart: { height: 350, type: "area" },
+            dataLabels: { enabled: false },
+            stroke: { curve: "smooth" },
+            xaxis: { type: "datetime", categories: [] },
+            tooltip: { x: { format: "dd/MM/yy HH:mm" } },
+          },
+        },
+      });
     }
 
     const now = new Date();

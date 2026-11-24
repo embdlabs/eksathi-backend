@@ -1,5 +1,6 @@
 const { mysqlcon } = require("../model/db");
 const { getUserIDByEmail } = require("../service/utilities.service");
+const { ensureEmojiTable } = require("../utils/ensureEmojiTable");
 
 const postEmojiReaction = async (req, res) => {
     const { email, questionId, emoji, emojiUnified } = req.body;
@@ -9,6 +10,7 @@ const postEmojiReaction = async (req, res) => {
     }
 
     try {
+        await ensureEmojiTable();
         let userId = await getUserIDByEmail(email);
         if (userId) {
             // Get user info for notification
@@ -173,6 +175,7 @@ const getQuestionEmojis = async (req, res) => {
     }
 
     try {
+        await ensureEmojiTable();
         // Get all emoji reactions for the question
         const query = `
             SELECT 
@@ -183,7 +186,7 @@ const getQuestionEmojis = async (req, res) => {
                 er.createdAt,
                 u.first_name,
                 u.last_name,
-                u.profile_pic,
+                u.avatar_url AS profile_pic,
                 u.username
             FROM emoji_reactions er
             JOIN users u ON er.user_id = u.id
@@ -235,6 +238,7 @@ const deleteEmojiReaction = async (req, res) => {
     }
 
     try {
+        await ensureEmojiTable();
         let userId = await getUserIDByEmail(email);
         if (!userId) {
             return res.status(409).json({ 

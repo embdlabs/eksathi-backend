@@ -121,44 +121,33 @@ const getProfileCompletion = async (req, res) => {
     return res.status(409).json({ message: "Invalid User ID" });
   }
 
-  // Define the fields that contribute to the profile completion
+  // Real institute + profile columns only (no phantom fields)
   const profileFields = [
     "username",
     "name",
     "email",
     "mobile",
-    "status",
-    "createdAt",
-    "database_name",
-    "auth_verification_path",
     "logo",
-    "name",
-    "description",
-    "head_of_department",
-    "eksathi_id",
     "aboutYou",
     "address",
     "city",
     "state",
     "country",
     "postal_code",
-    "affiliate_id",
     "establishmentDate",
+    "instituteRegistrationNumber",
+    "landmark",
+    "website",
+    "linkdin",
     "facebook",
     "instagram",
+    "twitter",
     "youtube",
-    "instituteRegistrationNumber",
-    "github",
-    "linkedin",
-    "landmark",
+    "pocname",
     "pocdesignation",
     "pocemail",
-    "pocname",
     "pocphone",
-    "twitter",
-    "website",
-    "affiliate_type",
-    // Add more fields as needed
+    "ownername",
   ];
 
   // console.log("profile Fields : ",profileFields)
@@ -256,10 +245,13 @@ const getInstitute = async (req, res) => {
       });
     }
 
-    // Return success response with the available institute data
+    // Never expose password hashes on public institute GET
+    const safe = institute.toJSON ? institute.toJSON() : { ...institute };
+    delete safe.password;
+
     res.status(200).json({
       message: "Institute information retrieved successfully",
-      institute,
+      institute: safe,
     });
   } catch (error) {
     // Catch any general error
@@ -301,21 +293,30 @@ const getInstituteProfile = async (req, res) => {
 
 const updateInstituteProfile = async (req, res) => {
   const instituteId = req.params.instituteId;
-  // console.log("instituteId",instituteId)
-  // console.log("updatedInstituteProfile=>>>>>> ",req.body)
   try {
-    const [rowsUpdated, [updatedInstituteProfile]] =
-      await DBMODELS.institute_profiles.update(req.body, {
-        where: { institute_id: instituteId },
-        returning: true,
-      });
-    // console.log("rowsUpdated=============>>",rowsUpdated)
+    const existing = await DBMODELS.institute_profiles.findOne({
+      where: { institute_id: instituteId },
+    });
 
-    if (rowsUpdated > 0) {
-      res.json(updatedInstituteProfile);
-    } else {
-      res.status(404).json({ message: "Institute Profile not found" });
+    const payload = { ...req.body };
+    delete payload.id;
+    delete payload.institute_id;
+
+    if (!existing) {
+      const created = await DBMODELS.institute_profiles.create({
+        ...payload,
+        institute_id: instituteId,
+      });
+      return res.status(201).json(created);
     }
+
+    await DBMODELS.institute_profiles.update(payload, {
+      where: { institute_id: instituteId },
+    });
+    const updated = await DBMODELS.institute_profiles.findOne({
+      where: { institute_id: instituteId },
+    });
+    return res.json(updated);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server Error" });
@@ -395,61 +396,95 @@ const deleteInstituteProfile = async (req, res) => {
 const onboardingInstitute = async (req, res) => {
   const instituteId = req.params.instituteId;
   try {
-    const { instituteData, profileData } = req.body;
-    // console.log("instituteData", instituteData);
-    // console.log("profileData", profileData);
+    const { instituteData = {}, profileData = {} } = req.body || {};
 
-    // Update Institute status to Active after onboarding
-    const updatedInstitute = await DBMODELS.institutes.update(
-      {
-        status: instituteData.status || "Active",
-      },
-      {
-        where: { id: instituteId },
-      },
-    );
-    // console.log("updatedInstitute---------", updatedInstitute);
+    if (!instituteId || Number.isNaN(Number(instituteId))) {
+      return res.status(400).json({ message: "Invalid institute id" });
+    }
 
     const institute = await DBMODELS.institutes.findOne({
       where: { id: instituteId },
     });
+    if (!institute) {
+      return res.status(404).json({ message: "Institute not found" });
+    }
 
-    const [user, created] = await DBMODELS.users.findOrCreate({
-      where: { email: institute?.email },
+    const instituteUpdate = {
+      status: instituteData.status || "Active",
+    };
+    if (instituteData.name) instituteUpdate.name = instituteData.name;
+    if (instituteData.mobile) instituteUpdate.mobile = instituteData.mobile;
+    if (instituteData.logo) instituteUpdate.logo = instituteData.logo;
+
+    await DBMODELS.institutes.update(instituteUpdate, {
+      where: { id: instituteId },
+    });
+
+    const [user] = await DBMODELS.users.findOrCreate({
+      where: { email: institute.email },
       defaults: {
-        username: institute?.username,
-        email: institute?.email,
-        password: institute?.password,
+        username: institute.username,
+        email: institute.email,
+        password: institute.password,
         role: "institute",
-        display_name: institute?.name,
-        phone: institute?.mobile,
-        avatar_url: institute?.logo,
-        bio: profileData?.aboutYou,
+        display_name: institute.name,
+        phone: institute.mobile,
+        avatar_url: institute.logo,
+        bio: profileData?.aboutYou || "",
         status: "active",
       },
     });
 
-    // Associate Institute Profile
-    const profile = await DBMODELS.institute_profiles.create({
-      ...profileData,
-      institute_id: instituteId,
-      eksathi_id: user?.id,
+    const cleanProfile = { ...profileData };
+    delete cleanProfile.id;
+    delete cleanProfile.institute_id;
+    if (cleanProfile.postal_code !== undefined && cleanProfile.postal_code !== null) {
+      cleanProfile.postal_code = Number(cleanProfile.postal_code) || 0;
+    }
+
+    let profile = await DBMODELS.institute_profiles.findOne({
+      where: { institute_id: instituteId },
     });
 
     if (profile) {
-      await sendWelcomeMail(
-        instituteData.email,
-        institute.username,
-        instituteData.role,
-        institute.profilelink,
-        instituteData.firstName,
+      await DBMODELS.institute_profiles.update(
+        { ...cleanProfile, eksathi_id: user?.id },
+        { where: { institute_id: instituteId } }
       );
+      profile = await DBMODELS.institute_profiles.findOne({
+        where: { institute_id: instituteId },
+      });
+    } else {
+      profile = await DBMODELS.institute_profiles.create({
+        ...cleanProfile,
+        institute_id: instituteId,
+        eksathi_id: user?.id,
+        city: cleanProfile.city || "Pending",
+        country: cleanProfile.country || "India",
+        postal_code: cleanProfile.postal_code || 0,
+      });
     }
 
-    res.status(201).json({ institute, profile });
+    try {
+      await sendWelcomeMail(
+        instituteData.email || institute.email,
+        institute.username,
+        instituteData.role || "institute",
+        instituteData.profilelink,
+        instituteData.firstName || institute.name
+      );
+    } catch (mailErr) {
+      console.error("Welcome mail skipped:", mailErr?.message || mailErr);
+    }
+
+    const refreshed = await DBMODELS.institutes.findOne({
+      where: { id: instituteId },
+    });
+
+    return res.status(201).json({ institute: refreshed, profile });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server Error" });
+    return res.status(500).json({ message: "Server Error" });
   }
 };
 

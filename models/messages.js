@@ -51,7 +51,12 @@ const messages = (sequelize) => {
         room_id: {
             type: DataTypes.STRING, // This can hold both numbers and strings
             allowNull: false, // Cannot be null as it's used to identify the chat room
-        }
+        },
+        is_read: {
+            type: DataTypes.BOOLEAN,
+            allowNull: false,
+            defaultValue: false,
+        },
     }, {
         sequelize,
         tableName: 'messages',

@@ -11,8 +11,12 @@ const supAuthUser = require("./authRouter")
 
 superAdminRouter.use("/dashboard",routeVerifierJwt,authorizeRole(['superadmin']),supDashboardRouter)
 superAdminRouter.use("/institute",routeVerifierJwt,authorizeRole(['superadmin']),supInstituteRouter)
-// superAdminRouter.use("/createadmins",routeVerifierJwt,authorizeRole(['superadmin']),createAdminRouter)
-superAdminRouter.use("/createadmins",createAdminRouter)
+superAdminRouter.use(
+  "/createadmins",
+  routeVerifierJwt,
+  authorizeRole(["superadmin"]),
+  createAdminRouter
+)
 superAdminRouter.use("/reports",routeVerifierJwt,authorizeRole(['superadmin']),supReportRouter)
 superAdminRouter.use("/user",routeVerifierJwt,authorizeRole(['superadmin']),supUserRouter)
 superAdminRouter.use("/job",routeVerifierJwt,authorizeRole(['superadmin']),supJobsRouter)

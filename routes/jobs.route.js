@@ -33,7 +33,7 @@ const {
   SearchJob,
   SearchTutorJob,
 } = require("../controllers/jobs.controller");
-const { routeVerifierJwt } = require("../service/auth.service");
+const { routeVerifierJwt, authorizeRole } = require("../service/auth.service");
 
 const JobsRouter = require("express").Router();
 
@@ -45,25 +45,67 @@ JobsRouter.get("/totalJobs", getTotalJobs);
 JobsRouter.get("/allJobs", getallJobs);
 
 // JobsRouter.get('/active', getActiveJobs);
-JobsRouter.get("/inactive", routeVerifierJwt, getInactiveJobs);
+JobsRouter.get(
+  "/inactive",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  getInactiveJobs
+);
 JobsRouter.get("/details/:slug", getJobBySlug);
 JobsRouter.get("/post/:id", routeVerifierJwt, getJob);
-// JobsRouter.post('/post', routeVerifierJwt, addJob);
-JobsRouter.post("/post", addJob);
-JobsRouter.put("/put/:id", routeVerifierJwt, updateJob);
-JobsRouter.delete("/delete/:id", routeVerifierJwt, deleteJob);
+JobsRouter.post(
+  "/post",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  addJob
+);
+JobsRouter.put(
+  "/put/:id",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  updateJob
+);
+JobsRouter.delete(
+  "/delete/:id",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  deleteJob
+);
 JobsRouter.get("/categorized", getJobDescriptionsByCategory);
-JobsRouter.put("/approve-job/:id", routeVerifierJwt, Approvejob);
-JobsRouter.put("/reject-job/:id", routeVerifierJwt, Rejectjob);
+JobsRouter.put(
+  "/approve-job/:id",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  Approvejob
+);
+JobsRouter.put(
+  "/reject-job/:id",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  Rejectjob
+);
 
 JobsRouter.get("/categories", routeVerifierJwt, getJobCategories);
 JobsRouter.get("/categories/:id", routeVerifierJwt, getJobCategory);
 
-JobsRouter.post("/category", addJobCategory);
-
-JobsRouter.post("/category", routeVerifierJwt, addJobCategory);
-JobsRouter.put("/categories/:id", routeVerifierJwt, updateJobCategory);
-JobsRouter.delete("/categories/:id", routeVerifierJwt, deleteJobCategory);
+JobsRouter.post(
+  "/category",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  addJobCategory
+);
+JobsRouter.put(
+  "/categories/:id",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  updateJobCategory
+);
+JobsRouter.delete(
+  "/categories/:id",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  deleteJobCategory
+);
 
 JobsRouter.get("/applications", routeVerifierJwt, getAllJobApplications);
 JobsRouter.get(
@@ -84,6 +126,7 @@ JobsRouter.get(
 JobsRouter.put(
   "/application/status/:applicationId",
   routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
   updateApplicationStatus,
 );
 JobsRouter.post("/apply", routeVerifierJwt, createApplication);
@@ -94,11 +137,28 @@ JobsRouter.put(
   removeWishList,
 );
 
-JobsRouter.get("/applied/:applicantId", getAllJobApplicationsByApplicantId);
-JobsRouter.get("/:userId/job/:jobId/application-status", getAppliedJobs);
-JobsRouter.get("/:userId/job/wishlist", getWishlistsJobs);
+JobsRouter.get(
+  "/applied/:applicantId",
+  routeVerifierJwt,
+  getAllJobApplicationsByApplicantId
+);
+JobsRouter.get(
+  "/:userId/job/:jobId/application-status",
+  routeVerifierJwt,
+  getAppliedJobs
+);
+JobsRouter.get(
+  "/:userId/job/wishlist",
+  routeVerifierJwt,
+  getWishlistsJobs
+);
 
-JobsRouter.put("/update/:id", routeVerifierJwt, updateJobStatus);
+JobsRouter.put(
+  "/update/:id",
+  routeVerifierJwt,
+  authorizeRole(["institute", "admin", "superadmin"]),
+  updateJobStatus
+);
 JobsRouter.get("/search", SearchJob);
 JobsRouter.get("/tutor-search", SearchTutorJob);
 

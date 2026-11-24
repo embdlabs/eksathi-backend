@@ -123,6 +123,14 @@ const postAnswer = async (req, res) => {
                 //     // Don't fail the answer if notification fails
                 // }
                 
+                try {
+                    const { announceAnswer } = require("../service/wallActivity.service");
+                    announceAnswer(userId, {
+                        questionTitle: question_title,
+                        questionId,
+                    }).catch(() => {});
+                } catch (_) { /* ignore */ }
+
                 return res.status(200).json({
                     success: 1,
                     message: "Answer Posted Successfully",
@@ -159,7 +167,7 @@ const getAnswers = async (req, res) => {
                     let user = await findUser(results[i].user_id);
                     let votes = await getTotalVotes(results[i].id, 'answer');
                     let comments = await findComments(results[i].id, 'answer');
-                    results[i] = { ...results[i], votes, author: user, comments };
+                    results[i] = { ...results[i], votes, author: user, auther: user, comments };
                 }
                 return res.status(200).json({
                     success: 1,
@@ -201,7 +209,7 @@ const getAnswersById = async (req, res) => {
                     let user = await findUser(results[i].user_id);
                     let votes = await getTotalVotes(results[i].id, 'answer');
                     let comments = await findComments(results[i].id, 'answer');
-                    results[i] = { ...results[i], votes, author: user, comments };
+                    results[i] = { ...results[i], votes, author: user, auther: user, comments };
                 }
                 return res.status(200).json({
                     success: 1,
@@ -434,6 +442,7 @@ const answeredQuestions = async (req, res) => {
               ...results[i],
               votes: voteCount,
               author: user,
+              auther: user,
               comments,
               tags,
             };

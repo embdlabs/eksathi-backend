@@ -397,10 +397,10 @@ const getFeedbackByUserId = async (req, res) => {
     const [userFeedback] = await mysqlcon
       .promise()
       .query(`
-        SELECT f.*, u.name, u.email 
+        SELECT f.*, u.first_name, u.last_name, u.email
         FROM feedback f
         LEFT JOIN users u ON f.user_id = u.id
-        WHERE f.user_id = ? 
+        WHERE f.user_id = ?
         ORDER BY f.createdAt DESC
       `, [user_id]);
 

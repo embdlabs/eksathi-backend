@@ -6,21 +6,58 @@ const Skills = require("../models/skills")(sequelize, DataTypes);
 
 
 const addExperience = async (req, res) => {
-    // Add the ability to create a new experience for the user
-    const { title, description, organization, ctc, subject, standard, location, employment_type, is_working, start_date, end_date, user_id } = req.body;
+    const {
+      title,
+      description,
+      organization,
+      ctc,
+      subject,
+      standard,
+      location,
+      employment_type,
+      is_working,
+      start_date,
+      end_date,
+    } = req.body;
+    // Prefer JWT identity over spoofable body.user_id
+    const user_id = req.user?.id || req.body.user_id || req.params.id;
+
+    if (!user_id || !title || !organization) {
+      return res.status(400).json({ message: "Missing required fields" });
+    }
 
     try {
-        //Query to insert the new experience
-        let query = `INSERT INTO work_experience (user_id, title, description, organization, ctc, subject, standard, location, employment_type, is_working, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+        const query = `INSERT INTO work_experience (user_id, title, description, organization, ctc, subject, standard, location, employment_type, is_working, start_date, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
-        //Inserting the new experience
-        mysqlcon.query(query, [user_id, title, description, organization, ctc, subject, standard, location, employment_type, is_working, start_date, end_date], (err, result) => {
+        mysqlcon.query(
+          query,
+          [
+            user_id,
+            title,
+            description || null,
+            organization,
+            ctc ?? null,
+            subject || null,
+            standard || null,
+            location || null,
+            employment_type || null,
+            is_working ? 1 : 0,
+            start_date || null,
+            end_date || null,
+          ],
+          async (err, result) => {
             if (err) {
                 console.error(err);
                 return res.status(500).json({ message: "Internal Server Error" });
             }
+            try {
+              const { congratulateExperience } = require("../service/wallActivity.service");
+              await congratulateExperience(user_id);
+            } catch (wallErr) {
+              console.error("Experience wall post failed:", wallErr?.message || wallErr);
+            }
             return res.status(200).json({ message: "New Experience Added", result });
-        })
+        });
     } catch (error) {
         console.log(error);
         return res.status(500).json({ message: 'Error creating new experience' });
@@ -53,15 +90,24 @@ const updateExperience = (req, res) => {
     const id = req.params.id;
     // console.log("Experience Id: =====> ",id)
     const workExperience = req.body;
+    const wallUserId = req.user?.id || req.body.user_id;
 
     try {
-        mysqlcon.query('UPDATE work_experience SET ? WHERE id = ?', [workExperience, id], (error, result) => {
+        mysqlcon.query('UPDATE work_experience SET ? WHERE id = ?', [workExperience, id], async (error, result) => {
             if (error) {
                 console.error('Error updating work experience:', error);
                 res.status(500).json({ error: 'Internal server error' });
             } else if (result.affectedRows === 0) {
                 res.status(404).json({ error: 'Work experience not found' });
             } else {
+                if (wallUserId) {
+                  try {
+                    const { congratulateExperience } = require("../service/wallActivity.service");
+                    await congratulateExperience(wallUserId, { isUpdate: true });
+                  } catch (wallErr) {
+                    console.error("Experience wall post failed:", wallErr?.message || wallErr);
+                  }
+                }
                 res.status(200).json({ message: 'Work experience updated' });
             }
         });
@@ -100,7 +146,8 @@ const deleteExperience = (req, res) => {
 // Create Education 
 
 const AddEducation = (req, res) => {
-    const { user_id, institution_name, degree, field_of_study, start_date, end_date, description, grade } = req.body;
+    const user_id = req.body.user_id || req.params.id;
+    const { institution_name, degree, field_of_study, start_date, end_date, description, grade } = req.body;
     const query = `
       INSERT INTO educations (user_id, institution_name, degree, field_of_study, start_date, end_date, description, grade)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -108,10 +155,17 @@ const AddEducation = (req, res) => {
     const values = [user_id, institution_name, degree, field_of_study, start_date, end_date, description, grade];
 
     try {
-        mysqlcon.query(query, values, (err, result) => {
+        mysqlcon.query(query, values, async (err, result) => {
             if (err) {
                 console.log(err);
                 return res.status(500).json({ message: 'Internal Server Error' });
+            }
+            try {
+              const { congratulateEducation } = require("../service/wallActivity.service");
+              const completed = Boolean(end_date);
+              await congratulateEducation(user_id, { completed });
+            } catch (wallErr) {
+              console.error("Education wall post failed:", wallErr?.message || wallErr);
             }
             return res.status(201).json({ message: 'Education created successfully', educationId: result.insertId });
         });
@@ -229,6 +283,12 @@ const addCertification = (req, res) => {
                 console.log(err);
                 return res.status(500).json({ message: 'Internal Server Error' });
             }
+
+            // Privacy-safe Wall celebration (no certificate name)
+            try {
+              const { congratulateCertificate } = require("../service/wallActivity.service");
+              congratulateCertificate(user_id).catch(() => {});
+            } catch (_) { /* ignore */ }
 
             return res.status(201).json({ message: 'Certification created successfully' });
         });
@@ -412,6 +472,11 @@ const addSkill = async (req, res) => {
                 }
             );
 
+            try {
+              const { congratulateSkill } = require("../service/wallActivity.service");
+              congratulateSkill(id).catch(() => {});
+            } catch (_) { /* ignore */ }
+
             return res.status(200).json({
                 message: `${skill_name} added successfully`,
                 user_id: id,
@@ -428,6 +493,10 @@ const addSkill = async (req, res) => {
             });
 
             console.log("Created Skill Record: ", newSkillRecord);
+            try {
+              const { congratulateSkill } = require("../service/wallActivity.service");
+              congratulateSkill(id).catch(() => {});
+            } catch (_) { /* ignore */ }
             return res.status(201).json({
                 message: "New skill entry created successfully",
                 user_id: id,
@@ -514,18 +583,24 @@ const deleteSkill = async (req, res) => {
   
 
 const addResearch = (req, res) => {
-    const { user_id, research_name, description, status, start_date, end_date, research_url} = req.body;
+    const user_id = req.user?.id || req.body.user_id || req.params.id;
+    const { research_name, description, status, start_date, end_date, research_url} = req.body;
 
     const query = 'INSERT INTO research (user_id, research_name, description, status, start_date, end_date, research_url) VALUES (?, ?, ?, ?, ?, ?, ?)';
     const values = [user_id, research_name, description, status, start_date, end_date, research_url];
 
     try {
-        mysqlcon.query(query, values, (err, results) => {
+        mysqlcon.query(query, values, async (err, results) => {
             if (err) {
                 console.log(err);
                 return res.status(500).json({ message: 'Internal Server Error' });
             }
-
+            try {
+              const { congratulateResearch } = require("../service/wallActivity.service");
+              await congratulateResearch(user_id);
+            } catch (wallErr) {
+              console.error("Research wall post failed:", wallErr?.message || wallErr);
+            }
             return res.status(201).json({ message: 'Research created successfully' });
         });
     } catch (err) {
@@ -586,15 +661,24 @@ const updateResearch = (req, res) => {
     // console.log("Id ===> : ",id)
     const research = req.body;
     // console.log("Research====> : ",research)
+    const wallUserId = req.user?.id || req.body.user_id;
 
     try {
-        mysqlcon.query('UPDATE research SET ? WHERE id = ?', [research, id], (error, result) => {
+        mysqlcon.query('UPDATE research SET ? WHERE id = ?', [research, id], async (error, result) => {
             if (error) {
                 console.error('Error updating research:', error);
                 res.status(500).json({ error: 'Internal server error' });
             } else if (result.affectedRows === 0) {
                 res.status(404).json({ error: 'Research not found' });
             } else {
+                if (wallUserId) {
+                  try {
+                    const { congratulateResearch } = require("../service/wallActivity.service");
+                    await congratulateResearch(wallUserId, { isUpdate: true });
+                  } catch (wallErr) {
+                    console.error("Research wall post failed:", wallErr?.message || wallErr);
+                  }
+                }
                 res.status(200).json({ message: 'Research updated' });
             }
         });
@@ -628,18 +712,24 @@ const deleteResearch = (req, res) => {
 }
 
 const addAward = (req,res) => {
-    const { user_id, award_name, description, issuing_organization, issuer, issue_date} = req.body
+    const user_id = req.user?.id || req.body.user_id || req.params.id;
+    const { award_name, description, issuing_organization, issuer, issue_date} = req.body
     
     const query = `INSERT INTO award (user_id, award_name, description, issuing_organization, issuer, issue_date) VALUES (?, ?, ?, ?, ?, ?);`
     const values = [user_id, award_name, description, issuing_organization, issuer, issue_date];
     try {
         try {
-            mysqlcon.query(query, values, (err, results) => {
+            mysqlcon.query(query, values, async (err, results) => {
                 if (err) {
                     console.log(err);
                     return res.status(500).json({ message: 'Internal Server Error' });
                 }
-    
+                try {
+                  const { congratulateAward } = require("../service/wallActivity.service");
+                  await congratulateAward(user_id);
+                } catch (wallErr) {
+                  console.error("Award wall post failed:", wallErr?.message || wallErr);
+                }
                 return res.status(201).json({ message: 'Award created successfully' });
             });
         } catch (err) {
@@ -701,15 +791,24 @@ const updateAward = (req,res) => {
     console.log("Id ===> : ",id)
     const award = req.body;
     console.log("Award====> : ",award)
+    const wallUserId = req.user?.id || req.body.user_id;
 
     try {
-        mysqlcon.query('UPDATE award SET ? WHERE id = ?', [award, id], (error, result) => {
+        mysqlcon.query('UPDATE award SET ? WHERE id = ?', [award, id], async (error, result) => {
             if (error) {
                 console.error('Error updating award:', error);
                 res.status(500).json({ error: 'Internal server error' });
             } else if (result.affectedRows === 0) {
                 res.status(404).json({ error: 'Award not found' });
             } else {
+                if (wallUserId) {
+                  try {
+                    const { congratulateAward } = require("../service/wallActivity.service");
+                    await congratulateAward(wallUserId, { isUpdate: true });
+                  } catch (wallErr) {
+                    console.error("Award wall post failed:", wallErr?.message || wallErr);
+                  }
+                }
                 res.status(200).json({ message: 'Award updated' });
             }
         });

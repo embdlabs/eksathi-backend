@@ -23,15 +23,15 @@ const Teachers = (sequelize) => {
       },
        qualification :{
         type:DataTypes.STRING(50),
-        defaultValue:"M.Sc in Math"
+        defaultValue:""
       },
        experience:{
         type:DataTypes.NUMBER,
-        defaultValue:2
+        defaultValue:0
       },
        rating:{
         type:DataTypes.FLOAT,
-        defaultValue:4.3
+        defaultValue:0
       },
       contact_info: {
         type: DataTypes.STRING,

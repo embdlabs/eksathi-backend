@@ -229,16 +229,34 @@ const { updateUserActivities } = require("../../service/utilities.service");
 
 const signup = async (req, res) => {
   let { name, email, mobile, password } = req.body;
-  
+  name = String(name || "").trim();
+  email = String(email || "").trim().toLowerCase();
+  mobile = String(mobile || "").trim();
+
   // Input validation
   if (!email || !password) {
     return res.status(400).json({ message: "Email or Password is missing" });
   }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: "Enter a valid email address" });
+  }
   if (!mobile) {
     return res.status(400).json({ message: "Mobile number is missing" });
   }
-  if (!name) {
-    return res.status(400).json({ message: "Name is missing" });
+  if (!/^[6-9]\d{9}$/.test(mobile)) {
+    return res
+      .status(400)
+      .json({ message: "Enter a valid 10-digit mobile number" });
+  }
+  if (!name || name.length < 3) {
+    return res
+      .status(400)
+      .json({ message: "Institute name must be at least 3 characters" });
+  }
+  if (String(password).length < 8) {
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 8 characters" });
   }
 
   // Generate username and database name
@@ -280,8 +298,9 @@ const signup = async (req, res) => {
         let hashpassword = await hashingPassword(password);
 
         // Insert the new institute into the database
-        const insertQuery = `INSERT INTO institutes (name, email, mobile, password, username, database_name) VALUES (?, ?, ?, ?, ?, ?)`;
-        const values = [name, email, mobile, hashpassword, username, databaseName];
+        // auth_verification_path is NOT NULL without DB default — set empty for local signup
+        const insertQuery = `INSERT INTO institutes (name, email, mobile, password, username, database_name, auth_verification_path) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+        const values = [name, email, mobile, hashpassword, username, databaseName, ""];
 
         mysqlcon.query(insertQuery, values, async (err, results, fields) => {
           if (err) {
@@ -329,11 +348,16 @@ const signup = async (req, res) => {
                 "SEND_OTP"
               );
 
+              const expirationTime = new Date(
+                Date.now() + expiry * 60000
+              ).toISOString();
+
               res.status(200).json({
                 message: "Institute registered successfully. Verify your account",
                 desc: "Check your email address for the OTP",
                 userId: userId,
                 results: results,
+                expirationTime,
               });
             }
           );
@@ -475,10 +499,12 @@ const signin = async (req, res) => {
             return res.status(401).json({ message: "Invalid Login Credential" });
           } else {
             console.log("resultes is  100",result)
-            const { id, first_name, email, role } = result[0];
+            const { id, email } = result[0];
          
             const user = result[0];
             delete user.password;
+            // institutes table has no role column — JWT must carry institute for gated APIs
+            user.role = "institute";
             
             updateUserActivities(result[0].id, "login", (err, activity) => {
               if (err) {
@@ -492,7 +518,7 @@ const signin = async (req, res) => {
               jwt: await createJWT({
                 id,
                 email,
-                role,
+                role: "institute",
               }),
             });
           }
@@ -562,7 +588,7 @@ const forgetPassword = (req, res) => {
         mailConfig,
         replacements,
         "RESET_PASSWORD",
-        "noreplay@eksathi.com"
+        "noreply@eksathi.com"
       );
       console.log(`Successfully sent password reset link on ${email}`);
       return res.status(200).json({
@@ -674,8 +700,69 @@ const updatePassword = (req, res) => {
 
 
 const sendOTP = (req, res) => {
-  res.status(200).json({
-    message: "Send OTP Route, Fuctionality Pending",
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const instituteId = req.body?.userId || req.body?.instituteId || null;
+
+  if (!email && !instituteId) {
+    return res
+      .status(400)
+      .json({ message: "Email or institute id is required" });
+  }
+
+  const query = email
+    ? `SELECT id, name, email FROM institutes WHERE email = ? LIMIT 1`
+    : `SELECT id, name, email FROM institutes WHERE id = ? LIMIT 1`;
+  const params = email ? [email] : [instituteId];
+
+  mysqlcon.query(query, params, (err, rows) => {
+    if (err) {
+      console.error("Institute sendOTP lookup:", err);
+      return res.status(500).json({ message: "Internal Server Error" });
+    }
+    if (!rows?.length) {
+      return res.status(404).json({ message: "Institute not found" });
+    }
+
+    const institute = rows[0];
+    const clientotp = generateOTP();
+    const expiry = 10;
+
+    mysqlcon.query(
+      `INSERT INTO institute_otp (institute_id, code, expired_at)
+       VALUES (?, ?, DATE_ADD(NOW(), INTERVAL ? MINUTE))`,
+      [institute.id, clientotp, expiry],
+      (otpErr) => {
+        if (otpErr) {
+          console.error("Institute sendOTP insert:", otpErr);
+          return res
+            .status(500)
+            .json({ message: "Failed to generate OTP. Please try again." });
+        }
+
+        const expirationTime = new Date(
+          Date.now() + expiry * 60000
+        ).toISOString();
+
+        sendEmailService.sendTemplatedEmail(
+          {
+            email: institute.email,
+            subject: `Your Verification OTP is ${clientotp}`,
+          },
+          {
+            name: institute.name || "Institute",
+            otpCode: clientotp,
+            expirationTime: "10 Minutes",
+          },
+          "SEND_OTP"
+        );
+
+        return res.status(200).json({
+          message: "OTP sent successfully",
+          expirationTime,
+          userId: institute.id,
+        });
+      }
+    );
   });
 };
 

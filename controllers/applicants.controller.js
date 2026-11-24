@@ -9,6 +9,10 @@ const getLastNewApplicants = async (req, res) => {
       where: { institute_id: instituteId },
     });
 
+    if (!jobDescriptions.length) {
+      return res.json([]);
+    }
+
     // Get the last 6 new job applicants
     const newApplicants = await DBMODELS.job_applications.findAll({
       where: {

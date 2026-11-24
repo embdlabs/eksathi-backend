@@ -16,23 +16,25 @@ const users = require("../../models/users")(sequelize, DataTypes);
 
 //post departments
 const createDepartment = async (req, res) => {
-  const { name, id, role } = req.body;
+  const { name, id } = req.body;
 
-  // Check if the user has the role of "institute"
-  if (role !== "institute") {
+  // Role/ownership from JWT only — ignore client body.role
+  const jwtRole = String(req.user?.role || "").toLowerCase();
+  if (!["institute", "admin", "superadmin"].includes(jwtRole)) {
     return res.status(403).json({
       message:
         'Only users with the role of "institute" can post a new department',
     });
   }
+  const instituteId = jwtRole === "institute" ? req.user.id : id;
 
-  if (!name || !id) {
+  if (!name || !instituteId) {
     return res.status(400).send("Missing required fields");
   }
 
   const departmentData = {
     name: name,
-    institute_id: id,
+    institute_id: instituteId,
   };
   try {
     // Check if the department already exists
@@ -40,7 +42,7 @@ const createDepartment = async (req, res) => {
       "SELECT * FROM institute_departments WHERE institute_id = ? AND name = ?";
     const [existingDepartments] = await mysqlcon
       .promise()
-      .query(existQuery, [id, name]);
+      .query(existQuery, [instituteId, name]);
 
     if (existingDepartments.length > 0) {
       return res.status(400).send("This Department already exists");

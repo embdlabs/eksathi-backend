@@ -17,13 +17,18 @@ const createAdmissions = async (req, res) => {
     lastDate,
     courseMode,
     courseType,
-    role,
   } = req.body;
-  
-  if (role !== "institute") {
-    return res
-      .status(403)
-      .json({ error: "Only users with the role of institute can post a new admissions" });
+
+  // Role/ownership from JWT only — ignore client body.role
+  const jwtRole = String(req.user?.role || "").toLowerCase();
+  if (!["institute", "admin", "superadmin"].includes(jwtRole)) {
+    return res.status(403).json({
+      error: "Only users with the role of institute can post a new admissions",
+    });
+  }
+  const instituteId = jwtRole === "institute" ? req.user.id : id;
+  if (!instituteId) {
+    return res.status(400).json({ error: "institute id is required" });
   }
 
   try {
@@ -33,7 +38,7 @@ const createAdmissions = async (req, res) => {
     console.log("Generated admission_id:", admission_id);
     
     const newAdmission = await admissions.create({
-      institute_id: id,
+      institute_id: instituteId,
       course_name: course,
       duration: duration,
       batch_start: startfrom,
@@ -129,6 +134,7 @@ const updateAdmission = async (req, res) => {
       course_duration: course_duration || courseDuration,
       seats: seats,
       fees: fees,
+      duration: duration,
       last_date: last_date || lastDate,
       course_mode: course_mode || courseMode,
       course_type: course_type || courseType,
@@ -248,23 +254,38 @@ const deleteAdmission = async (req, res) => {
 //   }
 // };
 
+const parseEnrollIds = (raw) => {
+  if (raw == null || raw === "") return [];
+  if (Array.isArray(raw)) {
+    return raw.filter((v) => v !== null && v !== "");
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((v) => v !== null && v !== "");
+      }
+      if (parsed != null && parsed !== "") return [parsed];
+    } catch {
+      // plain id string
+      return [trimmed];
+    }
+  }
+  return [raw];
+};
+
 const getAdmissions = async (req, res) => {
   const { id } = req.params;
   try {
     const data = await admissions.findAll({ where: { institute_id: id } });
     
-    // Extract and flatten all user IDs (handle both single values and arrays)
+    // Extract and flatten all user IDs (handle arrays, JSON strings, scalars)
     const enrolledUserIds = [];
     
     data.forEach(admission => {
-      if (admission.enroll_user_id) {
-        // Check if enroll_user_id is an array
-        if (Array.isArray(admission.enroll_user_id)) {
-          enrolledUserIds.push(...admission.enroll_user_id.filter(id => id !== null && id !== ''));
-        } else if (admission.enroll_user_id !== null && admission.enroll_user_id !== '') {
-          enrolledUserIds.push(admission.enroll_user_id);
-        }
-      }
+      enrolledUserIds.push(...parseEnrollIds(admission.enroll_user_id));
     });
     
     // Remove duplicates
@@ -291,31 +312,18 @@ const getAdmissions = async (req, res) => {
     // Map users to admissions data
     const admissionsWithUsers = data.map(admission => {
       const admissionObj = admission.toJSON ? admission.toJSON() : admission;
-      
-      if (admission.enroll_user_id) {
-        // Handle array of user IDs
-        if (Array.isArray(admission.enroll_user_id)) {
-          const enrolledUsers = admission.enroll_user_id
-            .map(userId => userMap[userId])
-            .filter(user => user !== undefined);
-          
-          return {
-            ...admissionObj,
-            users: enrolledUsers
-          };
-        } 
-        // Handle single user ID
-        else {
-          const user = userMap[admission.enroll_user_id];
-          return {
-            ...admissionObj,
-            user: user || null
-          };
-        }
-      }
-      
-      // If no enroll_user_id, return admission as is (with all details)
-      return admissionObj;
+      const ids = parseEnrollIds(admission.enroll_user_id);
+      if (!ids.length) return admissionObj;
+
+      const enrolledUsers = ids
+        .map((userId) => userMap[userId])
+        .filter(Boolean);
+
+      return {
+        ...admissionObj,
+        users: enrolledUsers,
+        user: enrolledUsers[0] || null,
+      };
     });
     
     res.status(200).json(admissionsWithUsers);

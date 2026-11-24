@@ -6,11 +6,20 @@ const Sequelize = require('sequelize');
 const process = require('process');
 const basename = path.basename(__filename);
 const env = process.env.NODE_ENV || 'development';
-const config = require(__dirname + '/../config/config.json')[env];
+const raw = require(__dirname + '/../config/config.json')[env] || {};
+// Prefer .env (DB*) over config.json so production never boots with null DB
+const config = {
+  ...raw,
+  host: process.env.DBHOST || raw.host,
+  username: process.env.DBUSER || raw.username,
+  password: process.env.DBPASS ?? raw.password,
+  database: process.env.DBNAME || raw.database,
+  dialect: raw.dialect || 'mysql',
+};
 const db = {};
 
 let sequelize;
-if (config.use_env_variable) {
+if (config.use_env_variable && process.env[config.use_env_variable]) {
   sequelize = new Sequelize(process.env[config.use_env_variable], config);
 } else {
   sequelize = new Sequelize(config.database, config.username, config.password, config);

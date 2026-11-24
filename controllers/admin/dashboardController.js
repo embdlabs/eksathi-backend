@@ -305,78 +305,50 @@ const totalJobs = async (req, res) => {
 
 const totalComments = async (req, res) => {
   try {
-    // SQL query to fetch all comments
-    const query = "SELECT * FROM comments";
-
-    // Execute the query
-    const [comments] = await mysqlcon.promise().query(query);
-
-    // Return the list of comments
+    const [result] = await mysqlcon
+      .promise()
+      .query("SELECT COUNT(*) AS total_comments FROM comments");
     return res.status(200).json({
-      message: "Comments retrieved successfully",
-      data: comments,
+      message: "Comments count retrieved successfully",
+      data: { total_count: result[0]?.total_comments || 0 },
     });
   } catch (err) {
-    // Log the error for debugging purposes
     console.error("Error retrieving comments:", err);
-
-    // Return a server error response
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 const totalAnswers = async (req, res) => {
   try {
-    // SQL query to fetch all answers
-    const query = "SELECT * FROM answers";
-
-    // Execute the query
-    const [answers] = await mysqlcon.promise().query(query);
-
-    // Return the list of answers
+    const [result] = await mysqlcon
+      .promise()
+      .query("SELECT COUNT(*) AS total_answers FROM answers");
     return res.status(200).json({
-      message: "Answers retrieved successfully",
-      data: answers,
+      message: "Answers count retrieved successfully",
+      data: { total_count: result[0]?.total_answers || 0 },
     });
   } catch (err) {
-    // Log the error for debugging purposes
     console.error("Error retrieving answers:", err);
-
-    // Return a server error response
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
 const totalEvents = async (req, res) => {
   try {
-    // SQL query to fetch all events
-    const query = `
-      SELECT * FROM events;
-    `;
-
-    // Execute the raw query
-    const [results] = await mysqlcon.promise().query(query);
-
-    if (results.length === 0) {
-      return res.status(204).json({
-        success: true,
-        message: 'No events found.',
-        results: []
-      });
-    }
-
-    // Return the list of events
+    const [results] = await mysqlcon
+      .promise()
+      .query("SELECT COUNT(*) AS total_events FROM events");
     return res.status(200).json({
       success: true,
-      message: 'Events retrieved successfully.',
-      results: results,
+      message: "Events count retrieved successfully.",
+      total_count: results[0]?.total_events || 0,
+      results: [],
     });
   } catch (error) {
-    console.error('Error fetching events:', error);
+    console.error("Error fetching events:", error);
     return res.status(500).json({
       success: false,
-      message: 'An error occurred while fetching events.',
-      error: error.message,
+      message: "An error occurred while fetching events.",
     });
   }
 };
@@ -433,34 +405,20 @@ const getUserActivityStatus = async (req, res) => {
 
 const getTutors = async (req, res) => {
   try {
-    // SQL query to fetch all events
-    const query = `
-      SELECT * FROM tutors;
-    `;
-
-    // Execute the raw query
-    const [results] = await mysqlcon.promise().query(query);
-
-    if (results.length === 0) {
-      return res.status(204).json({
-        success: true,
-        message: 'No Tutor found.',
-        results: []
-      });
-    }
-
-    // Return the list of events
+    const [results] = await mysqlcon
+      .promise()
+      .query("SELECT COUNT(*) AS total_tutors FROM tutors");
     return res.status(200).json({
       success: true,
-      message: ' Tutor retrieved successfully.',
-      results: results,
+      message: "Tutor count retrieved successfully.",
+      total_count: results[0]?.total_tutors || 0,
+      results: [],
     });
   } catch (error) {
-    console.error('Error fetching events:', error);
+    console.error("Error fetching tutors:", error);
     return res.status(500).json({
       success: false,
-      message: 'An error occurred while fetching tutor.',
-      error: error.message,
+      message: "An error occurred while fetching tutor.",
     });
   }
 };

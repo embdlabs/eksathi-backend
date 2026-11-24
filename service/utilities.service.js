@@ -86,6 +86,14 @@ const findUser = (id) => {
 
                 // Initialize user object with fetched user details
                 let user = { ...userResults[0] };
+                const cap = (v) => {
+                  if (v == null) return v;
+                  const s = String(v).trim();
+                  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+                };
+                user.first_name = cap(user.first_name);
+                user.last_name = cap(user.last_name);
+                user.name = [user.first_name, user.last_name].filter(Boolean).join(" ");
 
                 // Second query to get user skills
                 const skillSql = `SELECT skill_name FROM skills WHERE user_id=${id} AND proficiency_level='Expert';`;
@@ -131,13 +139,24 @@ const findUser = (id) => {
 const findUserRating = (id) => {
     try {
         return new Promise((resolve, reject) => {
-            const sql = `SELECT FORMAT(AVG(rating), 1) AS average_rating FROM ratings WHERE rated_user_id = ${id}`;
-            mysqlcon.query(sql, (error, result) => {
+            // One score per rater→ratee (latest row) so old duplicate inserts don't skew AVG
+            const sql = `
+              SELECT FORMAT(AVG(latest.rating), 1) AS average_rating
+              FROM (
+                SELECT r.rating
+                FROM ratings r
+                INNER JOIN (
+                  SELECT user_id, rated_user_id, MAX(id) AS max_id
+                  FROM ratings
+                  WHERE rated_user_id = ?
+                  GROUP BY user_id, rated_user_id
+                ) t ON r.id = t.max_id
+              ) latest`;
+            mysqlcon.query(sql, [id], (error, result) => {
                 if (error) {
                     reject(error);
                 } else {
                     const averageRating = result[0]?.average_rating || '0.0';
-                    // console.log("averageRating ",averageRating)
                     resolve(averageRating);
                 }
             });
@@ -217,7 +236,8 @@ const findReplies = (id) => {
                 } else {
                     for (var i = 0; i < replies.length; i++) {
                         let user = await findUser(replies[i].user_id);
-                        replies[i] = { ...replies[i], author: user };
+                        // Keep both keys — older UI reads `auther`
+                        replies[i] = { ...replies[i], author: user, auther: user };
                     }
                     resolve(replies);
                 }
@@ -238,7 +258,7 @@ const findReplyThread = (id) => {
                 } else {
                     for (var i = 0; i < replies.length; i++) {
                         let user = await findUser(replies[i].user_id);
-                        replies[i] = { ...replies[i], author: user };
+                        replies[i] = { ...replies[i], author: user, auther: user };
                     }
                     resolve(replies);
                 }
@@ -262,7 +282,7 @@ const findComments = (id, type) => {
                             for (var i = 0; i < comments.length; i++) {
                                 let user = await findUser(comments[i].user_id);
                                 let replies = await findReplies(comments[i].id);
-                                comments[i] = { ...comments[i], author: user, replies };
+                                comments[i] = { ...comments[i], author: user, auther: user, replies };
                             }
                             resolve(comments);
                         }
@@ -282,7 +302,7 @@ const findComments = (id, type) => {
                             for (var i = 0; i < comments.length; i++) {
                                 let user = await findUser(comments[i].user_id);
                                 let replies = await findReplies(comments[i].id);
-                                comments[i] = { ...comments[i], author: user, replies };
+                                comments[i] = { ...comments[i], author: user, auther: user, replies };
                             }
                             resolve(comments);
                         }
@@ -375,9 +395,9 @@ function getUserStats(userId) {
 
 // Function to update user activities with a callback
 const updateUserActivities = (userId, activityType, callback) => {
-    const timestamp = new Date().toISOString();
-    const sql = `INSERT INTO user_activity (user_id, activity_type, timestamp) VALUES (?, ?, ?)`;
-    const values = [userId, activityType, timestamp];
+    // MySQL DATETIME rejects ISO strings with 'T'/'Z' — use SQL NOW()
+    const sql = `INSERT INTO user_activity (user_id, activity_type, timestamp) VALUES (?, ?, NOW())`;
+    const values = [userId, activityType];
 
     try {
         mysqlcon.query(sql, values, (err, result) => {
@@ -698,18 +718,27 @@ function createOrUpdateResearch(userId, researchDetails){
 
 function getLastActive(userId) {
     return new Promise((resolve, reject) => {
+        // Prefer live online status / users.updatedAt over stale login-only activity
         mysqlcon.query(
-            `SELECT timestamp FROM user_activity WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1`,
-            [userId],
+            `SELECT u.is_online, u.updatedAt,
+                    (SELECT timestamp FROM user_activity WHERE user_id = ? ORDER BY timestamp DESC LIMIT 1) AS activity_ts
+             FROM users u WHERE u.id = ? LIMIT 1`,
+            [userId, userId],
             (err, result) => {
                 if (err) {
                     reject(err);
+                } else if (!result?.length) {
+                    resolve(null);
                 } else {
-                    if (result.length > 0) {
-                        resolve(result[0].timestamp);
-                    } else {
-                        resolve(null);
+                    const row = result[0];
+                    if (row.is_online === true || row.is_online === "true" || row.is_online === 1) {
+                        resolve(new Date());
+                        return;
                     }
+                    const a = row.activity_ts ? new Date(row.activity_ts).getTime() : 0;
+                    const b = row.updatedAt ? new Date(row.updatedAt).getTime() : 0;
+                    const latest = Math.max(a, b);
+                    resolve(latest ? new Date(latest) : null);
                 }
             }
         );
@@ -770,28 +799,38 @@ function extractKeywords(text) {
 
 const getConnectionStatus = (sender, receiver) => {
     return new Promise((resolve, reject) => {
-        // if(!sender || !receiver || sender === 'undefined')  {
-        //     return resolve(null);
-        // }
-
-        // console.log("SEnder Id ================== > :",sender)
-        // console.log("Receiver Id ================== > :",receiver)
+        if (
+            sender == null ||
+            receiver == null ||
+            sender === "undefined" ||
+            receiver === "undefined"
+        ) {
+            return resolve(null);
+        }
 
         try {
-            mysqlcon.query(`SELECT status FROM connections WHERE sender_id = ${sender} AND receiver_id = ${receiver}`, (err, result) => {
-                if (err) {
-                    console.error(err);
-                    reject('Error getting connection status');
-                } else {
-                    // console.log(`Connection Status of ${sender} and ${receiver} is : `, result);
-                    resolve(result[0]?.status || null);
+            // Either direction — otherwise accepted peers who sent the request look unconnected.
+            mysqlcon.query(
+                `SELECT status FROM connections
+                 WHERE (sender_id = ? AND receiver_id = ?)
+                    OR (sender_id = ? AND receiver_id = ?)
+                 ORDER BY FIELD(status, 'accepted', 'pending', 'rejected') ASC
+                 LIMIT 1`,
+                [sender, receiver, receiver, sender],
+                (err, result) => {
+                    if (err) {
+                        console.error(err);
+                        reject("Error getting connection status");
+                    } else {
+                        resolve(result[0]?.status || null);
+                    }
                 }
-            });
+            );
         } catch (err) {
-            reject('Error getting expertise');
+            reject("Error getting expertise");
         }
     });
-}
+};
 const getPresentWorkExperience = (userId) => {
     return new Promise((resolve, reject) => {
 
@@ -841,6 +880,7 @@ async function fetchUserProfile(userId) {
                 up.profession,
                 up.designation,
                 up.institute,
+                up.school,
                 up.education,
                 up.website_url,
                 up.twitter_link,
@@ -895,7 +935,8 @@ async function fetchUserProfile(userId) {
                     dob: rows[0]?.dob,
                     profession: rows[0]?.profession,
                     designation: rows[0]?.designation,
-                    institute: rows[0]?.institute,
+                    institute: rows[0]?.institute || rows[0]?.school || "",
+                    school: rows[0]?.school || "",
                     education: rows[0]?.education,
                     address_line_1: rows[0]?.address_line_1,
                     address_line_2: rows[0]?.address_line_2,

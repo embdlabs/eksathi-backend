@@ -80,10 +80,10 @@ var transport = nodemailer.createTransport(transportOptions);
 
 let sendEmailService = (toemail, subject, body, fromemail) => {
   var mailOptions = {
-    from: `"EkSathi" <${fromemail || "noreplay@eksathi.com"}>`,
+    from: `"EkSathi" <${fromemail || "noreply@eksathi.com"}>`,
     to: toemail,
     envelope: {
-      from: `"EkSathi" <${fromemail || "noreplay@eksathi.com"}>`,
+      from: `"EkSathi" <${fromemail || "noreply@eksathi.com"}>`,
       to: `${toemail}`,
     },
     subject: subject,
