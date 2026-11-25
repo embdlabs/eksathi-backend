@@ -45,7 +45,11 @@ require("./controllers/cron/cron");
 const {
   ensureOffersTeachingColumn,
 } = require("./service/ratingRules.service");
+const { ensureUsersColumns } = require("./utils/ensureUsersColumns");
 ensureOffersTeachingColumn();
+ensureUsersColumns().catch((err) =>
+  console.error("ensureUsersColumns boot:", err?.message || err)
+);
 
 const endpoint =
   process.env.NODE_ENV === "production"

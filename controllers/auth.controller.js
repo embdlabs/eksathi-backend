@@ -446,6 +446,7 @@ const findRoleUserConflict = async (email, contact) => {
 
   const existingUser = await DBMODELS.users.findOne({
     where: { [Op.or]: identityConditions },
+    attributes: ["id", "email", "phone"],
   });
 
   if (existingUser) {
@@ -473,6 +474,13 @@ const upsertTeacherProfile = async (email, teacherData) => {
 
 const signup = async (req, res) => {
   try {
+    try {
+      const { ensureUsersColumns } = require("../utils/ensureUsersColumns");
+      await ensureUsersColumns();
+    } catch (_) {
+      /* ensure is best-effort */
+    }
+
     let {
       password,
       email,
@@ -717,9 +725,19 @@ const signup = async (req, res) => {
       });
     }
 
+    const isDbDown =
+      error?.name === "SequelizeConnectionRefusedError" ||
+      error?.name === "SequelizeConnectionError" ||
+      error?.original?.code === "ECONNREFUSED" ||
+      error?.original?.code === "ETIMEDOUT" ||
+      /ECONNREFUSED|ETIMEDOUT|connect/i.test(String(error?.message || ""));
+
     return res.status(500).json({
       success: false,
-      message: error.message,
+      message: isDbDown
+        ? "We couldn’t complete registration right now. Please try again in a moment."
+        : "Registration failed. Please try again.",
+      code: isDbDown ? "DB_UNAVAILABLE" : "SIGNUP_FAILED",
     });
   }
 
@@ -1029,6 +1047,13 @@ const emailAlreadyExist = async (req, res) => {
 
 const emailOrPhoneAlreadyExist = async (req, res) => {
   try {
+    try {
+      const { ensureUsersColumns } = require("../utils/ensureUsersColumns");
+      await ensureUsersColumns();
+    } catch (_) {
+      /* ensure is best-effort */
+    }
+
     const { email, phone } = req.body;
 
     if (!email && !phone) {
@@ -1281,7 +1306,6 @@ const additionalInfo = async (req, res) => {
 
 const signin = async (req, res) => {
   const { username, email, phone, password } = req.body;
-  console.log(req.body);
   let identifier;
   
   if (!username && !email && !phone) {
@@ -1344,9 +1368,12 @@ const signin = async (req, res) => {
           console.log("Database Error:", err);
           res.status(500).json({ message: "Internal Server Error" });
         } else if (result.length == 0) {
-          return res
-            .status(404)
-            .json({ message: "Incorrect credentials combination", error: err });
+          return res.status(404).json({
+            message:
+              "We couldn’t find you on our system. Please register to create an account.",
+            code: "USER_NOT_FOUND",
+            suggestRegister: true,
+          });
         } else if (result[0].status == "inactive") {
           const user = result[0];
 
@@ -1405,7 +1432,11 @@ const signin = async (req, res) => {
             result[0].password
           );
           if (!confirmedPass) {
-            res.status(401).json({ message: "Invalid Login Credential" });
+            res.status(401).json({
+              message:
+                "The password you entered doesn’t match. Please try again.",
+              code: "PASSWORD_MISMATCH",
+            });
           } else {
             const { id, first_name, email, role } = result[0];
             const user = result[0];
