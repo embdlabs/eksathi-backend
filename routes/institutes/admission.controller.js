@@ -1,4 +1,4 @@
-const { DataTypes, where } = require("sequelize");
+const { DataTypes, where, Op } = require("sequelize");
 const { mysqlcon } = require("../../model/db");
 const sequelize = require("../../model/connection");
 const crypto = require('crypto');
@@ -335,7 +335,16 @@ const getAdmissions = async (req, res) => {
 
 const getAllAdmissions = async (req, res) => {
   try {
-    const data = await admissions.findAll();
+    // Public "Admissions Open" — hide expired application deadlines
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const data = await admissions.findAll({
+      where: {
+        last_date: { [Op.gte]: startOfToday },
+        status: { [Op.ne]: "finish" },
+      },
+      order: [["last_date", "ASC"]],
+    });
     res.status(200).json(data);
   } catch (error) {
     console.error(error);
