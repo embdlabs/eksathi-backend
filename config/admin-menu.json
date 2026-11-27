@@ -1,0 +1,9 @@
+{
+  "dashboard": true,
+  "notifications": true,
+  "institutes": true,
+  "users": true,
+  "jobs": true,
+  "reports": true,
+  "siteMenus": false
+}

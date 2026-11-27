@@ -397,7 +397,9 @@ const registerTutor = async (req, res) => {
     const subjectsString = subjectsArray.join(',');
     const classesString = classesArray.join(',');
 
-    if (existingTutor.length > 0) {
+    // Guests with an existing row: keep one search profile (merge).
+    // Logged-in users always get a NEW tutor-need row (My Tutor Requests lists each post separately).
+    if (existingTutor.length > 0 && !authedUserId) {
       const tutor = existingTutor[0];
       tutorId = tutor.id;
 
@@ -409,15 +411,12 @@ const registerTutor = async (req, res) => {
           [email]
         );
       if (linkedUser.length > 0) {
-        const authedId = req.user?.id;
-        if (!authedId || String(authedId) !== String(linkedUser[0].id)) {
-          return res.status(409).json({
-            success: false,
-            requiresLogin: true,
-            error:
-              "This email is already registered on EkSathi. Please log in to continue.",
-          });
-        }
+        return res.status(409).json({
+          success: false,
+          requiresLogin: true,
+          error:
+            "This email is already registered on EkSathi. Please log in to continue.",
+        });
       }
 
       // Parse existing subjects and classes (stored as comma-separated strings)
@@ -434,10 +433,10 @@ const registerTutor = async (req, res) => {
         const updatedSubjects = [...existingSubjects, ...uniqueSubjects].join(',');
         const updatedClasses = [...existingClasses, ...uniqueClasses].join(',');
         
-        // Update the tutor record with new subjects and classes
+        // Refresh listing window so a re-post is live again
         await mysqlcon.promise().query(
           `UPDATE tutors SET subject = ?, class = ?, city = ?, state = ?, country = ?,
-              posted_by_user_id = COALESCE(posted_by_user_id, ?),
+              isValid = 1, createdAt = CURRENT_TIMESTAMP,
               updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
           [
             updatedSubjects,
@@ -445,7 +444,6 @@ const registerTutor = async (req, res) => {
             city,
             state,
             country || "India",
-            authedUserId || null,
             tutor.id,
           ]
         );
@@ -475,9 +473,10 @@ const registerTutor = async (req, res) => {
           expiresInDays: TUTOR_NEED_TTL_DAYS,
         });
       } else {
-        // Same subjects/classes — still treat as successful search so Experts can filter
+        // Same subjects/classes — refresh so listing stays live while searching
         await mysqlcon.promise().query(
-          `UPDATE tutors SET city = ?, state = ?, country = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
+          `UPDATE tutors SET city = ?, state = ?, country = ?, isValid = 1,
+              createdAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
           [city, state, country || "India", tutor.id]
         );
         return res.json({
@@ -1471,7 +1470,12 @@ const getMyTutorNeeds = async (req, res) => {
     const results = (rows || []).map((row) => {
       const created = row.createdAt ? new Date(row.createdAt).getTime() : NaN;
       const ageOk = !Number.isNaN(created) && now - created <= ttlMs;
-      const live = Boolean(row.isValid) && ageOk;
+      const validFlag =
+        row.isValid === true ||
+        row.isValid === 1 ||
+        row.isValid === "1" ||
+        Number(row.isValid) === 1;
+      const live = validFlag && ageOk;
       const expiresAt =
         !Number.isNaN(created) ? new Date(created + ttlMs).toISOString() : null;
       const views = viewMap[row.id] || { listingViews: 0, contactViews: 0 };

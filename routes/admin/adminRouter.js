@@ -10,6 +10,7 @@ const { routeVerifierJwt, authorizeRole } = require('../../service/auth.service'
 const AdminPageRouter = require('./adminPageRouter');
 const PollsRouter = require('./PollsRouter');
 const jobsRouter = require('./jobsRouter');
+const SiteConfigAdminRouter = require('./siteConfigRouter');
  
 AdminRouter.use('/auth', AuthRouter);
 // AdminRouter.use(routeVerifierJwt);
@@ -22,6 +23,12 @@ AdminRouter.use('/categories',routeVerifierJwt,authorizeRole(['admin','superadmi
 AdminRouter.use('/reports',routeVerifierJwt,authorizeRole(['admin','superadmin']), ReportsRouter);
 AdminRouter.use("/polls", routeVerifierJwt,authorizeRole(['admin','superadmin']),PollsRouter);
 AdminRouter.use("/jobs", routeVerifierJwt,authorizeRole(['admin','superadmin']),jobsRouter);
+AdminRouter.use(
+  "/site-config",
+  routeVerifierJwt,
+  authorizeRole(["admin", "superadmin"]),
+  SiteConfigAdminRouter
+);
 
 // Manual trigger: monthly activity summary emails to top active users
 AdminRouter.post(

@@ -30,6 +30,7 @@ const SubjectRouter = require("./subject.route")
 const TutorRouter = require("./tutors.route")
 const FeedbackRouter = require("./feedback.route")
 const EmojiRouter = require("./emoji.route")
+const SiteConfigRouter = require("./siteConfig.route")
 
 MainRouter.use('/auth', AuthRouter);
 MainRouter.use('/user', UserRouter);
@@ -63,6 +64,7 @@ MainRouter.use('/subject',SubjectRouter)
 MainRouter.use('/tutor',TutorRouter)
 MainRouter.use('/feedback',FeedbackRouter)
 MainRouter.use("/emoji-reaction",EmojiRouter)
+MainRouter.use('/site-config', SiteConfigRouter)
 
 
 module.exports = MainRouter;

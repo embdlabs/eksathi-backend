@@ -1113,10 +1113,15 @@ const getUserByUsername = async (req, res) => {
         return res.status(404).json({ message: "User not found" });
       }
 
-      // Use profile_rating from user_profiles if available, otherwise fallback to calculated rating
-      let ratingValue = rows[0].profile_rating;
-      if (ratingValue === undefined || ratingValue === null) {
-        ratingValue = await findUserRating(rows[0].id);
+      // Live avg from ratings table (matches Gyani rating rules)
+      let ratingValue = 0;
+      try {
+        ratingValue = parseFloat(await findUserRating(rows[0].id)) || 0;
+      } catch (_) {
+        ratingValue =
+          rows[0].profile_rating != null
+            ? parseFloat(rows[0].profile_rating) || 0
+            : 0;
       }
 
       const parseJsonField = (value) => {
@@ -2596,14 +2601,17 @@ const getUsers = async (req, res) => {
 
         const enrichUsers = async () => {
           for (let i = 0; i < users.length; i++) {
-            let ratingValue = users[i].profile_rating;
-            if (ratingValue === undefined || ratingValue === null) {
-              ratingValue = await findUserRating(users[i].id);
+            // Always use live avg from ratings table (same as Gyani rating rules)
+            let ratingValue = 0;
+            try {
+              ratingValue = parseFloat(await findUserRating(users[i].id)) || 0;
+            } catch (_) {
+              ratingValue =
+                users[i].profile_rating != null
+                  ? parseFloat(users[i].profile_rating) || 0
+                  : 0;
             }
-            users[i].rating =
-              ratingValue !== undefined && ratingValue !== null
-                ? parseFloat(ratingValue)
-                : 0;
+            users[i].rating = ratingValue;
 
             users[i].last_active = await getLastActive(users[i].id);
             users[i].profession = users[i]?.role;
@@ -2694,58 +2702,270 @@ const getUsers = async (req, res) => {
 
 const getAllTeacher = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 5;
-    const userId = req.query.userId;
-    const role = "teacher";
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 8, 1), 24);
+    const rawUserId = req.query.userId;
+    const viewerId =
+      rawUserId &&
+      rawUserId !== "undefined" &&
+      rawUserId !== "null" &&
+      String(rawUserId).trim() !== ""
+        ? Number(rawUserId)
+        : null;
 
-    let sql, params;
+    // Optional explicit prefs (FE can pass); otherwise derived from viewer profile
+    let prefLocation = String(req.query.location || "").trim();
+    let prefSubjects = String(req.query.subject || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    let prefClass = String(
+      req.query.classLevel || req.query.classname || ""
+    ).trim();
 
-    if (userId && userId !== "undefined" && userId !== "null") {
-      // Include connection status in query using LEFT JOIN
-      sql = `
-        SELECT 
-          u.id, u.username, u.email, u.display_name, 
-          u.first_name, u.last_name, u.avatar_url, u.bio,
-          u.rating, u.experience, u.qualification, u.subject,
-          u.teaching_method, u.location, u.is_online, u.created_at,
-          c.status as connectionStatus
-        FROM users u
-        LEFT JOIN connections c ON 
-          (c.user_id = ? AND c.connected_user_id = u.id) OR
-          (c.user_id = u.id AND c.connected_user_id = ?)
-        WHERE u.role = ?
-        GROUP BY u.id
-        ORDER BY u.id DESC
-        LIMIT ?
-      `;
-      params = [userId, userId, role, limit];
-    } else {
-      // Simple query without connection status
-      sql = `
-        SELECT *
-        FROM users 
-        WHERE role = ?
-        ORDER BY id DESC
-        LIMIT ?
-      `;
-      params = [role, limit];
+    if (viewerId && Number.isFinite(viewerId)) {
+      try {
+        const [prefRows] = await mysqlcon.promise().query(
+          `SELECT u.location, u.subject,
+                  up.classLevel, up.selectedSubjects, up.teachingClasses,
+                  (SELECT l.city_name FROM locations l WHERE l.user_id = u.id LIMIT 1) AS city_name
+           FROM users u
+           LEFT JOIN user_profiles up ON up.user_id = u.id
+           WHERE u.id = ?
+           LIMIT 1`,
+          [viewerId]
+        );
+        const pref = prefRows?.[0];
+        if (pref) {
+          if (!prefLocation) {
+            prefLocation =
+              String(pref.city_name || "").trim() ||
+              (() => {
+                try {
+                  const loc =
+                    typeof pref.location === "string"
+                      ? JSON.parse(pref.location)
+                      : pref.location;
+                  return String(loc?.city || loc?.district || "").trim();
+                } catch (_) {
+                  return String(pref.location || "")
+                    .replace(/[{}"]/g, " ")
+                    .trim()
+                    .split(/\s+/)
+                    .find(Boolean) || "";
+                }
+              })();
+          }
+
+          if (!prefSubjects.length) {
+            const fromSelected = (() => {
+              try {
+                const raw = pref.selectedSubjects;
+                if (!raw) return [];
+                const parsed =
+                  typeof raw === "string" ? JSON.parse(raw) : raw;
+                return Array.isArray(parsed)
+                  ? parsed.map((s) => String(s).trim()).filter(Boolean)
+                  : [];
+              } catch (_) {
+                return [];
+              }
+            })();
+            const fromUserSubject = (() => {
+              try {
+                const raw = pref.subject;
+                if (!raw) return [];
+                if (Array.isArray(raw)) {
+                  return raw.map((s) => String(s).trim()).filter(Boolean);
+                }
+                if (typeof raw === "string") {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                      return parsed.map((s) => String(s).trim()).filter(Boolean);
+                    }
+                  } catch (_) {
+                    /* comma list */
+                  }
+                  return raw
+                    .split(",")
+                    .map((s) => s.trim())
+                    .filter(Boolean);
+                }
+                return [];
+              } catch (_) {
+                return [];
+              }
+            })();
+            prefSubjects = [...new Set([...fromSelected, ...fromUserSubject])];
+          }
+
+          if (!prefClass) {
+            prefClass = String(pref.classLevel || "").trim();
+          }
+        }
+      } catch (prefErr) {
+        console.error("getAllTeacher pref lookup:", prefErr?.message || prefErr);
+      }
     }
 
-    const cacheKey = `teachers_${limit}_${userId || "guest"}`;
+    // Ranking: location (100) > subject (10) > class (1); then latest
+    const scoreParts = [];
+    const params = [];
+
+    if (prefLocation) {
+      scoreParts.push(`(
+        CASE WHEN EXISTS (
+          SELECT 1 FROM locations l
+          WHERE l.user_id = u.id
+            AND (l.city_name = ? OR l.city_name LIKE ? OR l.district LIKE ?)
+        )
+        OR CAST(u.location AS CHAR) LIKE ?
+        OR (
+          JSON_VALID(u.location)
+          AND JSON_UNQUOTE(JSON_EXTRACT(u.location, '$.city')) = ?
+        )
+        THEN 100 ELSE 0 END
+      )`);
+      const loc = prefLocation;
+      const locLike = `%${loc}%`;
+      params.push(loc, locLike, locLike, locLike, loc);
+    }
+
+    if (prefSubjects.length) {
+      const subjectOr = prefSubjects
+        .map(
+          () => `(
+            (JSON_VALID(u.subject) AND JSON_CONTAINS(u.subject, ?))
+            OR CAST(u.subject AS CHAR) LIKE ?
+            OR EXISTS (
+              SELECT 1 FROM skills s
+              WHERE s.user_id = u.id AND CAST(s.skill_name AS CHAR) LIKE ?
+            )
+            OR (
+              up.selectedSubjects IS NOT NULL
+              AND CAST(up.selectedSubjects AS CHAR) LIKE ?
+            )
+          )`
+        )
+        .join(" OR ");
+      scoreParts.push(`(CASE WHEN (${subjectOr}) THEN 10 ELSE 0 END)`);
+      prefSubjects.forEach((s) => {
+        params.push(JSON.stringify(s), `%${s}%`, `%${s}%`, `%${s}%`);
+      });
+    }
+
+    if (prefClass) {
+      const classVal = prefClass;
+      const rangeMatches = [];
+      if (/^\d+$/.test(classVal)) {
+        const n = Number(classVal);
+        ["1-5", "6-8", "6-9", "9-10", "11-12"].forEach((range) => {
+          const [a, b] = range.split("-").map(Number);
+          if (n >= a && n <= b) rangeMatches.push(range);
+        });
+      }
+      const matchValues = [classVal, ...rangeMatches];
+      const classOr = matchValues
+        .map(
+          () => `(
+            up.classLevel = ?
+            OR CAST(up.classLevel AS CHAR) LIKE ?
+            OR (
+              up.teachingClasses IS NOT NULL
+              AND (
+                (JSON_VALID(up.teachingClasses) AND (
+                  JSON_CONTAINS(up.teachingClasses, ?)
+                  OR JSON_SEARCH(up.teachingClasses, 'one', ?) IS NOT NULL
+                ))
+                OR CAST(up.teachingClasses AS CHAR) LIKE ?
+              )
+            )
+          )`
+        )
+        .join(" OR ");
+      scoreParts.push(`(CASE WHEN (${classOr}) THEN 1 ELSE 0 END)`);
+      matchValues.forEach((v) => {
+        params.push(v, `%${v}%`, JSON.stringify(v), v, `%${v}%`);
+      });
+    }
+
+    const relevanceExpr =
+      scoreParts.length > 0 ? `(${scoreParts.join(" + ")})` : `0`;
+
+    let sql = `
+      SELECT
+        u.id, u.username, u.email, u.display_name,
+        u.first_name, u.last_name, u.avatar_url, u.bio,
+        u.rating, u.experience, u.qualification, u.subject,
+        u.teaching_method, u.location, u.is_online, u.createdAt, u.role,
+        up.rating AS profile_rating,
+        up.classLevel, up.selectedSubjects, up.teachingClasses,
+        ${relevanceExpr} AS relevance
+    `;
+    const selectParams = [...params];
+
+    if (viewerId && Number.isFinite(viewerId)) {
+      sql += `,
+        (
+          SELECT c.status FROM connections c
+          WHERE (c.sender_id = ? AND c.receiver_id = u.id)
+             OR (c.sender_id = u.id AND c.receiver_id = ?)
+          ORDER BY c.id DESC
+          LIMIT 1
+        ) AS connectionStatus
+      `;
+      selectParams.push(viewerId, viewerId);
+    } else {
+      sql += `, NULL AS connectionStatus`;
+    }
+
+    sql += `
+      FROM users u
+      LEFT JOIN user_profiles up ON up.user_id = u.id
+      WHERE LOWER(COALESCE(u.role, '')) IN ('teacher', 'professional')
+    `;
+
+    if (viewerId && Number.isFinite(viewerId)) {
+      sql += ` AND u.id != ?`;
+      selectParams.push(viewerId);
+    }
+
+    sql += `
+      ORDER BY relevance DESC, u.id DESC
+      LIMIT ?
+    `;
+    selectParams.push(limit);
+
+    const cacheKey = `teachers_near_${limit}_${viewerId || "guest"}_${prefLocation || ""}_${prefSubjects.join("|")}_${prefClass}`;
 
     const result = await cachedQuery({
       cacheName: "users",
       cacheKey: cacheKey,
       sql: sql,
-      params: params,
-      ttl: 120,
+      params: selectParams,
+      ttl: 60,
     });
 
-    const teachers = result.data.map((teacher) => ({
-      ...teacher,
-      // Ensure connectionStatus is null if not in query
-      connectionStatus: teacher.connectionStatus || null,
-    }));
+    const teachers = await Promise.all(
+      (result.data || []).map(async (teacher) => {
+        let liveRating = 0;
+        try {
+          liveRating = parseFloat(await findUserRating(teacher.id)) || 0;
+        } catch (_) {
+          liveRating =
+            teacher.profile_rating != null
+              ? Number(teacher.profile_rating) || 0
+              : teacher.rating != null
+                ? Number(teacher.rating) || 0
+                : 0;
+        }
+        return {
+          ...teacher,
+          rating: liveRating,
+          connectionStatus: teacher.connectionStatus || null,
+        };
+      })
+    );
 
     res.json({
       success: true,
@@ -2754,8 +2974,13 @@ const getAllTeacher = async (req, res) => {
       meta: {
         cached: result.fromCache,
         timestamp: result.timestamp,
-        limit: limit,
+        limit,
         total: teachers.length,
+        prefs: {
+          location: prefLocation || null,
+          subjects: prefSubjects,
+          classLevel: prefClass || null,
+        },
       },
     });
   } catch (error) {

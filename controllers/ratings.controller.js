@@ -9,6 +9,7 @@ const {
   RATING_COOLDOWN_DAYS,
   queryAsync,
 } = require("../service/ratingRules.service");
+const { ensureRatingCommentColumn } = require("../utils/ensureRatingComment");
 
 async function persistAverage(ratedUserId) {
   try {
@@ -26,10 +27,17 @@ async function persistAverage(ratedUserId) {
   }
 }
 
+function sanitizeComment(raw) {
+  const text = String(raw || "").trim().replace(/\s+/g, " ");
+  if (!text) return null;
+  return text.slice(0, 300);
+}
+
 /**
  * Shared save: connection + rateable provider + one row per pair + 3-month cooldown.
+ * Optional comment for look/feel reviews on profile.
  */
-async function saveGyaniRating({ raterId, rateeId, rating, answerMeta }) {
+async function saveGyaniRating({ raterId, rateeId, rating, comment, answerMeta }) {
   if (!raterId || !rateeId) {
     return { status: 400, body: { error: "Missing rating fields." } };
   }
@@ -64,12 +72,15 @@ async function saveGyaniRating({ raterId, rateeId, rating, answerMeta }) {
     };
   }
 
+  await ensureRatingCommentColumn();
+  const note = sanitizeComment(comment);
+
   const existing = await getLatestPairRating(raterId, rateeId);
   if (existing) {
     const remaining = cooldownRemainingDays(
       existing.updatedAt || existing.createdAt
     );
-    if (remaining > 0) {
+    if (remaining > 0 && !note) {
       return {
         status: 429,
         body: {
@@ -81,17 +92,25 @@ async function saveGyaniRating({ raterId, rateeId, rating, answerMeta }) {
         },
       };
     }
-    await queryAsync(
-      `UPDATE ratings
-       SET rating = ?, is_rated = 1, updatedAt = NOW()
-       WHERE id = ?`,
-      [stars, existing.id]
-    );
+    // Allow comment refresh during cooldown; rating value only if cooldown cleared
+    if (remaining > 0) {
+      await queryAsync(
+        `UPDATE ratings SET comment = ?, updatedAt = NOW() WHERE id = ?`,
+        [note, existing.id]
+      );
+    } else {
+      await queryAsync(
+        `UPDATE ratings
+         SET rating = ?, comment = ?, is_rated = 1, updatedAt = NOW()
+         WHERE id = ?`,
+        [stars, note, existing.id]
+      );
+    }
   } else {
     await queryAsync(
-      `INSERT INTO ratings (user_id, rated_user_id, rating, is_rated)
-       VALUES (?, ?, ?, 1)`,
-      [raterId, rateeId, stars]
+      `INSERT INTO ratings (user_id, rated_user_id, rating, comment, is_rated)
+       VALUES (?, ?, ?, ?, 1)`,
+      [raterId, rateeId, stars, note]
     );
   }
 
@@ -106,6 +125,43 @@ async function saveGyaniRating({ raterId, rateeId, rating, answerMeta }) {
   await persistAverage(rateeId);
   return { status: 200, body: { message: "Rating saved successfully." } };
 }
+
+/** Public list of reviews (with comment) for a provider profile. */
+const getProviderReviews = async (req, res) => {
+  try {
+    const rateeId = Number(req.params.userId);
+    if (!rateeId) {
+      return res.status(400).json({ error: "Invalid user id" });
+    }
+    await ensureRatingCommentColumn();
+    const rows = await queryAsync(
+      `SELECT r.id, r.rating, r.comment, r.createdAt, r.updatedAt,
+              u.id AS rater_id, u.first_name, u.last_name, u.username, u.avatar_url
+       FROM ratings r
+       INNER JOIN (
+         SELECT user_id, rated_user_id, MAX(id) AS max_id
+         FROM ratings
+         WHERE rated_user_id = ?
+         GROUP BY user_id, rated_user_id
+       ) latest ON r.id = latest.max_id
+       INNER JOIN users u ON u.id = r.user_id
+       WHERE r.rated_user_id = ?
+         AND r.comment IS NOT NULL
+         AND TRIM(r.comment) <> ''
+       ORDER BY COALESCE(r.updatedAt, r.createdAt) DESC
+       LIMIT 40`,
+      [rateeId, rateeId]
+    );
+    return res.json({
+      success: true,
+      results: rows || [],
+      count: (rows || []).length,
+    });
+  } catch (err) {
+    console.error("getProviderReviews:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
 
 const postUserRating = async (req, res) => {
   try {
@@ -150,7 +206,7 @@ const postUserRating = async (req, res) => {
 
 const postRatingDirect = async (req, res) => {
   try {
-    const { rating, ratedUserId } = req.body;
+    const { rating, ratedUserId, comment } = req.body;
     // Identity from JWT only — ignore spoofable ?userId=
     const userId = req.user?.id;
     if (!userId) {
@@ -161,6 +217,7 @@ const postRatingDirect = async (req, res) => {
       raterId: userId,
       rateeId: ratedUserId,
       rating,
+      comment,
     });
     return res.status(result.status).json(result.body);
   } catch (err) {
@@ -187,6 +244,7 @@ const updateRating = async () => {
 module.exports = {
   postUserRating,
   postRatingDirect,
+  getProviderReviews,
   updateRating,
   saveGyaniRating,
 };
