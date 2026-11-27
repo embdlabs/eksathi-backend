@@ -67,11 +67,13 @@ const allowedOrigins =
     ? [
         "https://www.eksathi.com",
         "https://eksathi.com",
+        "https://eksathi-frontend.pages.dev",
       ]
     : [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://unrivaled-salamander-c78b0c.netlify.app/",
+        "https://eksathi-frontend.pages.dev",
       ];
 
 const corsOptions = {
@@ -80,7 +82,8 @@ const corsOptions = {
     if (
       allowedOrigins.includes(origin) ||
       /\.vercel\.app$/.test(origin) ||
-      /\.eksathi\.com$/.test(origin)
+      /\.eksathi\.com$/.test(origin) ||
+      /\.pages\.dev$/.test(origin)
     ) {
       return callback(null, true);
     } else {

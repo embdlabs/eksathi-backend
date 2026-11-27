@@ -367,7 +367,7 @@ function getUserStats(userId) {
                 const questionCount = results[0].question_count;
 
                 let query =
-                    `SELECT DISTINCT users.id
+                    `SELECT DISTINCT users.id, users.username
                 FROM connections
                 INNER JOIN users ON (connections.receiver_id = users.id OR connections.sender_id = users.id)
                 WHERE (connections.sender_id = ? OR connections.receiver_id = ?) AND connections.status = 'accepted' AND users.id != ?
