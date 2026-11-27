@@ -508,26 +508,67 @@ const registerTutor = async (req, res) => {
         });
       }
 
-      // Logged-in owner: save search intent and continue
+      // Logged-in owner: insert a new need (email unique may still exist on old DBs)
       const ownerId = authedUserId || existingUser[0].id;
-      const [result] = await mysqlcon.promise().query(
-        `INSERT INTO tutors (name, email, phone, subject, class, city, state, country, isValid, connectionStatus, posted_by_user_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'process', ?)`,
-        [
-          name,
-          email,
-          phone,
-          subjectsString,
-          classesString,
-          city,
-          state,
-          country || "India",
-          true,
-          ownerId,
-        ]
-      );
+      let tutorIdLocal;
+      try {
+        const [result] = await mysqlcon.promise().query(
+          `INSERT INTO tutors (name, email, phone, subject, class, city, state, country, isValid, connectionStatus, posted_by_user_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'process', ?)`,
+          [
+            name,
+            email,
+            phone,
+            subjectsString,
+            classesString,
+            city,
+            state,
+            country || "India",
+            true,
+            ownerId,
+          ]
+        );
+        tutorIdLocal = result.insertId;
+      } catch (insertErr) {
+        // Fallback when UNIQUE(email) still present: refresh the latest owned row
+        if (
+          insertErr?.code === "ER_DUP_ENTRY" ||
+          String(insertErr?.message || "").includes("Duplicate")
+        ) {
+          const [owned] = await mysqlcon.promise().query(
+            `SELECT id FROM tutors
+             WHERE posted_by_user_id = ?
+                OR LOWER(TRIM(email)) = LOWER(TRIM(?))
+             ORDER BY id DESC LIMIT 1`,
+            [ownerId, email]
+          );
+          if (!owned?.length) throw insertErr;
+          tutorIdLocal = owned[0].id;
+          await mysqlcon.promise().query(
+            `UPDATE tutors
+             SET name = ?, phone = ?, subject = ?, class = ?, city = ?, state = ?,
+                 country = ?, isValid = 1, connectionStatus = 'process',
+                 posted_by_user_id = ?, createdAt = CURRENT_TIMESTAMP,
+                 updatedAt = CURRENT_TIMESTAMP
+             WHERE id = ?`,
+            [
+              name,
+              phone,
+              subjectsString,
+              classesString,
+              city,
+              state,
+              country || "India",
+              ownerId,
+              tutorIdLocal,
+            ]
+          );
+        } else {
+          throw insertErr;
+        }
+      }
 
-      tutorId = result.insertId;
+      tutorId = tutorIdLocal;
 
       await softPostTutorWall({
         userId: ownerId,
@@ -603,7 +644,15 @@ const registerTutor = async (req, res) => {
     });
   } catch (err) {
     console.error("Register Tutor Error:", err);
-    res.status(500).json({ error: "Internal Server Error" });
+    const detail =
+      err?.code === "ER_DUP_ENTRY"
+        ? "A tutor search with this email already exists. Please try again or update your existing request."
+        : err?.sqlMessage || err?.message || "Internal Server Error";
+    res.status(500).json({
+      error: "Internal Server Error",
+      details: process.env.NODE_ENV === "production" ? undefined : detail,
+      message: detail,
+    });
   }
 };
 

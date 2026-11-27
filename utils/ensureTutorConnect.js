@@ -16,7 +16,38 @@ const addColumnIfMissing = async (column, ddl) => {
  * Tutor-need connect: open default status, requester, and owner user id.
  * No formal migration — ALTER IF missing only.
  */
+const dropUniqueEmailIndexes = async () => {
+  // Logged-in users may post multiple tutor-needs with the same account email.
+  // Old schema had UNIQUE(email) which makes POST /app/tutor return 500 (ER_DUP_ENTRY).
+  const [indexes] = await mysqlcon.promise().query(
+    `SHOW INDEX FROM tutors WHERE Column_name = 'email' AND Non_unique = 0`
+  );
+  const seen = new Set();
+  for (const idx of indexes || []) {
+    const key = idx.Key_name;
+    if (!key || key === "PRIMARY" || seen.has(key)) continue;
+    seen.add(key);
+    try {
+      await mysqlcon.promise().query(`ALTER TABLE tutors DROP INDEX \`${key}\``);
+      console.log(`[ensureTutorConnect] Dropped unique index ${key} on tutors.email`);
+    } catch (err) {
+      console.error(
+        `[ensureTutorConnect] drop index ${key}:`,
+        err?.message || err
+      );
+    }
+  }
+};
+
 const ensureTutorConnectDefaults = async () => {
+  // Always safe to re-check unique email indexes (SHOW INDEX is cheap).
+  // Columns/backfill only run once per process when successful.
+  try {
+    await dropUniqueEmailIndexes();
+  } catch (err) {
+    console.error("ensureTutorConnectDefaults dropUnique:", err?.message || err);
+  }
+
   if (ensured) return;
   try {
     await addColumnIfMissing(
@@ -52,10 +83,11 @@ const ensureTutorConnectDefaults = async () => {
         /* ignore */
       }
     }
+    ensured = true;
   } catch (err) {
     console.error("ensureTutorConnectDefaults:", err?.message || err);
+    // Do not set ensured — retry next request
   }
-  ensured = true;
 };
 
 module.exports = { ensureTutorConnectDefaults };

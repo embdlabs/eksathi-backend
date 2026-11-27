@@ -295,37 +295,41 @@ const sendConnectionRequest = async (req, res) => {
                   connectionStatus: "accepted",
                 });
               } else if (existingConnection.status === "pending") {
-                // Check who sent the pending request
-                if (existingConnection.sender_id === senderId) {
+                // Check who sent the pending request (string-safe ids)
+                if (String(existingConnection.sender_id) === String(senderId)) {
                   return res.status(400).json({
                     message:
                       "You have already sent a connection request to this user",
                     connectionStatus: "pending_sent",
+                    connectionId: existingConnection.id,
                   });
                 } else {
                   return res.status(400).json({
                     message:
                       "This user has already sent you a connection request. Please check your received requests.",
                     connectionStatus: "pending_received",
+                    connectionId: existingConnection.id,
                   });
                 }
               } else if (existingConnection.status === "rejected") {
                 // Check who rejected the request
                 if (
-                  existingConnection.sender_id === senderId &&
+                  String(existingConnection.sender_id) === String(senderId) &&
                   existingConnection.status === "rejected"
                 ) {
                   return res.status(400).json({
                     message: "Your previous connection request was rejected",
                     connectionStatus: "rejected",
+                    connectionId: existingConnection.id,
                   });
                 } else if (
-                  existingConnection.receiver_id === senderId &&
+                  String(existingConnection.receiver_id) === String(senderId) &&
                   existingConnection.status === "rejected"
                 ) {
                   return res.status(400).json({
                     message: "You previously rejected this connection request",
                     connectionStatus: "previously_rejected",
+                    connectionId: existingConnection.id,
                   });
                 }
               }
@@ -511,7 +515,12 @@ const checkConnectionStatus = async (req, res) => {
 
   try {
     mysqlcon.query(
-      "SELECT id, sender_id, receiver_id, status, createdAt FROM connections WHERE (sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?)",
+      `SELECT id, sender_id, receiver_id, status, createdAt
+       FROM connections
+       WHERE (sender_id = ? AND receiver_id = ?)
+          OR (sender_id = ? AND receiver_id = ?)
+       ORDER BY FIELD(status, 'accepted', 'pending', 'rejected') ASC, id DESC
+       LIMIT 1`,
       [userId, otherUserId, otherUserId, userId],
       (err, results) => {
         if (err) {
@@ -527,14 +536,20 @@ const checkConnectionStatus = async (req, res) => {
         }
 
         const connection = results[0];
-        let status = connection.status;
         let relationship = "unknown";
 
         // Determine the relationship from JWT user's perspective
-        if (connection.sender_id == userId) {
+        if (String(connection.sender_id) === String(userId)) {
           relationship = "sender";
-        } else if (connection.receiver_id == userId) {
+        } else if (String(connection.receiver_id) === String(userId)) {
           relationship = "receiver";
+        }
+
+        // Directional pending so FE can show Accept vs Requested
+        let status = connection.status;
+        if (status === "pending") {
+          status =
+            relationship === "receiver" ? "pending_received" : "pending_sent";
         }
 
         // Attach hide privacy (does not change accepted status — reconnect blocked)
@@ -544,22 +559,25 @@ const checkConnectionStatus = async (req, res) => {
             return res.status(200).json({
               message: "Connection found",
               connection: connection,
+              connectionId: connection.id,
               connectionStatus: status,
               relationship: relationship,
               isHidden,
               hiddenBy: hideRow?.hidden_by || null,
               canUnhide:
                 isHidden && String(hideRow?.hidden_by) === String(userId),
-              messagingAllowed: status === "accepted" && !isHidden,
+              messagingAllowed:
+                connection.status === "accepted" && !isHidden,
             });
           })
           .catch(() =>
             res.status(200).json({
               message: "Connection found",
               connection: connection,
+              connectionId: connection.id,
               connectionStatus: status,
               relationship: relationship,
-              messagingAllowed: status === "accepted",
+              messagingAllowed: connection.status === "accepted",
             })
           );
       }
@@ -664,10 +682,25 @@ const actionConnection = async (req, res) => {
 
         // Perform the action
         if (action === "accept") {
-          // Update the connection status to accepted
+          // Accept this request and any duplicate pending rows between the pair
           mysqlcon.query(
-            `UPDATE connections SET status = 'accepted', updatedAt = CURRENT_TIMESTAMP WHERE id = ?`,
-            [connectionId],
+            `UPDATE connections
+             SET status = 'accepted', updatedAt = CURRENT_TIMESTAMP
+             WHERE id = ?
+                OR (
+                  status = 'pending'
+                  AND (
+                    (sender_id = ? AND receiver_id = ?)
+                    OR (sender_id = ? AND receiver_id = ?)
+                  )
+                )`,
+            [
+              connectionId,
+              connection.sender_id,
+              connection.receiver_id,
+              connection.receiver_id,
+              connection.sender_id,
+            ],
             (err) => {
               if (err) {
                 console.log(err);

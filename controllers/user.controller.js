@@ -932,6 +932,25 @@ const getUser = async (req, res) => {
       }
     };
 
+    // Pure students must not surface teacher/professional as profession
+    // (stale user_profiles.profession vs users.role → dual Student+Teacher badges).
+    const roleLc = String(userData.role || "").toLowerCase();
+    const offersTeachingFlag = Boolean(
+      userData.offers_teaching === 1 ||
+        userData.offers_teaching === true ||
+        userData.offers_teaching === "1"
+    );
+    let professionOut = userData.profession;
+    if (
+      roleLc === "student" &&
+      !offersTeachingFlag &&
+      ["teacher", "professional"].includes(
+        String(professionOut || "").toLowerCase()
+      )
+    ) {
+      professionOut = "student";
+    }
+
     const user = {
       id: userData.id,
       username: userData.username,
@@ -964,7 +983,7 @@ const getUser = async (req, res) => {
         role: userData.role,
         gender: userData.gender,
         dob: userData.dob,
-        profession: userData.profession,
+        profession: professionOut,
         designation: userData.designation,
         institute: userData.institute,
         education: userData.education,
@@ -2905,16 +2924,22 @@ const getAllTeacher = async (req, res) => {
     const selectParams = [...params];
 
     if (viewerId && Number.isFinite(viewerId)) {
+      // Directional pending so Experts cards can show Accept vs Requested
       sql += `,
         (
-          SELECT c.status FROM connections c
+          SELECT CASE
+            WHEN c.status = 'pending' AND c.receiver_id = ? THEN 'pending_received'
+            WHEN c.status = 'pending' AND c.sender_id = ? THEN 'pending_sent'
+            ELSE c.status
+          END
+          FROM connections c
           WHERE (c.sender_id = ? AND c.receiver_id = u.id)
              OR (c.sender_id = u.id AND c.receiver_id = ?)
-          ORDER BY c.id DESC
+          ORDER BY FIELD(c.status, 'accepted', 'pending', 'rejected') ASC, c.id DESC
           LIMIT 1
         ) AS connectionStatus
       `;
-      selectParams.push(viewerId, viewerId);
+      selectParams.push(viewerId, viewerId, viewerId, viewerId);
     } else {
       sql += `, NULL AS connectionStatus`;
     }

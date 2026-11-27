@@ -797,32 +797,41 @@ function extractKeywords(text) {
     return keywords;
 }
 
-const getConnectionStatus = (sender, receiver) => {
+const getConnectionStatus = (viewerId, otherUserId) => {
     return new Promise((resolve, reject) => {
         if (
-            sender == null ||
-            receiver == null ||
-            sender === "undefined" ||
-            receiver === "undefined"
+            viewerId == null ||
+            otherUserId == null ||
+            viewerId === "undefined" ||
+            otherUserId === "undefined"
         ) {
             return resolve(null);
         }
 
         try {
             // Either direction — otherwise accepted peers who sent the request look unconnected.
+            // Return directional pending so FE can show Accept vs Requested.
             mysqlcon.query(
-                `SELECT status FROM connections
+                `SELECT status, sender_id, receiver_id FROM connections
                  WHERE (sender_id = ? AND receiver_id = ?)
                     OR (sender_id = ? AND receiver_id = ?)
                  ORDER BY FIELD(status, 'accepted', 'pending', 'rejected') ASC
                  LIMIT 1`,
-                [sender, receiver, receiver, sender],
+                [viewerId, otherUserId, otherUserId, viewerId],
                 (err, result) => {
                     if (err) {
                         console.error(err);
                         reject("Error getting connection status");
                     } else {
-                        resolve(result[0]?.status || null);
+                        const row = result[0];
+                        if (!row?.status) return resolve(null);
+                        if (row.status === "pending") {
+                            if (String(row.receiver_id) === String(viewerId)) {
+                                return resolve("pending_received");
+                            }
+                            return resolve("pending_sent");
+                        }
+                        resolve(row.status);
                     }
                 }
             );

@@ -342,10 +342,46 @@ const InitSocket = () => {
     socket.on("SEND_MSG", async (msg) => {
       // Bind sender to the socket's registered user — ignore spoofed sender ids
       // socketId lives on userData (see addNewUser), not the wrapper object
-      const registered = onlineUsers.find(
+      let registered = onlineUsers.find(
         (u) =>
           u.userData?.socketId === socket.id || u.socketId === socket.id
       );
+
+      // Race fix: SEND_MSG can arrive before ADD_USER finishes — auto-bind via JWT
+      if (!registered?.userData?.id) {
+        const rawToken =
+          msg?.token ||
+          socket.handshake?.auth?.token ||
+          (socket.handshake?.headers?.authorization || "").replace(
+            /^Bearer\s+/i,
+            ""
+          );
+        if (rawToken && process.env.JWT_SECRET) {
+          try {
+            const verified = await verifyJWT(
+              String(rawToken).replace(/^Bearer\s+/i, ""),
+              process.env.JWT_SECRET
+            );
+            const jwtUser = verified?.data || verified;
+            if (jwtUser?.id) {
+              registered = addNewUser(
+                {
+                  id: jwtUser.id,
+                  email: jwtUser.email,
+                  first_name: jwtUser.first_name,
+                  last_name: jwtUser.last_name,
+                  username: jwtUser.username,
+                  role: jwtUser.role,
+                },
+                socket.id
+              );
+            }
+          } catch (_) {
+            /* fall through to error */
+          }
+        }
+      }
+
       if (!registered?.userData?.id) {
         socket.emit("SAVE_MSG_ERROR", {
           error: "Not authenticated on socket",
@@ -377,7 +413,6 @@ const InitSocket = () => {
         const result = await saveMsg(msg);
         console.log("✅ Message saved successfully:", result);
         savedMessage = result;
-        socket.emit("MESSAGE_SAVED", result);
       } catch (error) {
         console.error("❌ Error saving message:", error);
         socket.emit("SAVE_MSG_ERROR", {
@@ -415,21 +450,21 @@ const InitSocket = () => {
 
       console.log("📤 Prepared message to send:", messageToSend);
 
+      // Always ack the sending socket; also fan out via roster socketIds
+      socket.emit("MESSAGE_SAVED", savedMessage);
+      socket.emit("RECEIVED_MSG", messageToSend);
+
       const sender = getUser(msg.sender);
-      if (sender && sender.userData.socketId) {
-        console.log(`📤 Sending message back to sender ${sender.userData.email} (Socket: ${sender.userData.socketId})`);
+      if (
+        sender?.userData?.socketId &&
+        sender.userData.socketId !== socket.id
+      ) {
         io.to(sender.userData.socketId).emit("RECEIVED_MSG", messageToSend);
-      } else {
-        console.log(`⚠️ Sender ${msg.sender} not found or offline`);
       }
 
       const receiver = getUser(msg.receiver);
-      if (
-        receiver &&
-        receiver.userData.socketId &&
-        isOnlineFlag(receiver.userData.is_online)
-      ) {
-        console.log(`📤 Sending message to receiver ${receiver.userData.email} (Socket: ${receiver.userData.socketId})`);
+      // Deliver whenever peer has an active socket — roster membership is enough
+      if (receiver?.userData?.socketId) {
         io.to(receiver.userData.socketId).emit("RECEIVED_MSG", messageToSend);
       } else {
         console.log(`⚠️ Receiver ${msg.receiver} is offline or not found`);
