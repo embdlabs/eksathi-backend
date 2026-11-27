@@ -46,9 +46,13 @@ const {
   ensureOffersTeachingColumn,
 } = require("./service/ratingRules.service");
 const { ensureUsersColumns } = require("./utils/ensureUsersColumns");
+const { ensureAdmissionsColumns } = require("./utils/ensureAdmissionsColumns");
 ensureOffersTeachingColumn();
 ensureUsersColumns().catch((err) =>
   console.error("ensureUsersColumns boot:", err?.message || err)
+);
+ensureAdmissionsColumns().catch((err) =>
+  console.error("ensureAdmissionsColumns boot:", err?.message || err)
 );
 
 const endpoint =
