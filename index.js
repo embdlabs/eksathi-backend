@@ -47,12 +47,23 @@ const {
 } = require("./service/ratingRules.service");
 const { ensureUsersColumns } = require("./utils/ensureUsersColumns");
 const { ensureAdmissionsColumns } = require("./utils/ensureAdmissionsColumns");
+const { ensureMessagesColumns } = require("./utils/ensureMessagesColumns");
+const {
+  ensureTutorConnectDefaults,
+} = require("./utils/ensureTutorConnect");
 ensureOffersTeachingColumn();
 ensureUsersColumns().catch((err) =>
   console.error("ensureUsersColumns boot:", err?.message || err)
 );
 ensureAdmissionsColumns().catch((err) =>
   console.error("ensureAdmissionsColumns boot:", err?.message || err)
+);
+ensureMessagesColumns().catch((err) =>
+  console.error("ensureMessagesColumns boot:", err?.message || err)
+);
+// Drop tutors.email UNIQUE + ensure posted_by_user_id (don't wait for first POST)
+ensureTutorConnectDefaults().catch((err) =>
+  console.error("ensureTutorConnectDefaults boot:", err?.message || err)
 );
 
 const endpoint =

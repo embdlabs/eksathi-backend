@@ -7,8 +7,11 @@ const fs = require("fs");
 const path = require("path");
 const { assertCleanMessage } = require("../utils/chatModeration");
 const { isUserInRoomId, assertUserInRooms } = require("../utils/roomMembership");
+const { ensureMessagesColumns } = require("../utils/ensureMessagesColumns");
 
 const saveMsg = async (msg) => {
+  await ensureMessagesColumns();
+
   const messageContent = msg.message?.title
     ? `${msg.message.title}\n${msg.message.description}`
     : msg.message;
@@ -187,6 +190,7 @@ const getMessagesByUserId = async (req, res) => {
   const userId = authId;
 
   try {
+    await ensureMessagesColumns();
     const results = await sequelize.query(
       `
             SELECT id, sender_user_id, receiver_user_id, sender_institute_id,
@@ -228,6 +232,7 @@ const getMessagesByRoom = async (req, res) => {
   }
 
   try {
+    await ensureMessagesColumns();
     // Opening a room marks inbound messages as read for the JWT user
     try {
       await sequelize.query(
